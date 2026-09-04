@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=IDELite
+Comment=Small VSCode-inspired desktop editor
+Exec=idelite %F
+Icon=idelite
+Terminal=false
+Categories=Development;IDE;
+Keywords=editor;code;development;IDE;
+StartupNotify=true

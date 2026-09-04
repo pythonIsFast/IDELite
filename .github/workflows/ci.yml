@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+      - name: Check Python sources
+        run: python -m compileall -q run.py idelite packaging/build_pyz.py
+      - name: Build compact packages
+        run: |
+          python packaging/build_pyz.py
+          packaging/build-deb.sh
+      - name: Enforce package size limit
+        run: |
+          test "$(stat -c %s dist/idelite-*.pyz)" -lt 5242880
+          test "$(stat -c %s dist/idelite_*_all.deb)" -lt 5242880
+      - name: Test packaged application
+        run: dist/idelite-*.pyz --help

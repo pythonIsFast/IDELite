@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IDELite</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <svg class="icon-sprite" aria-hidden="true">
+    <symbol id="i-files" viewBox="0 0 24 24"><path d="M5 2h9l5 5v15H5zM13 3v5h5M2 6v14h2"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></symbol>
+    <symbol id="i-git" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.2"/><circle cx="6" cy="19" r="2.2"/><circle cx="18" cy="7" r="2.2"/><path d="M6 7.2v9.6M8.2 6h4.3A5.5 5.5 0 0 1 18 11.5v-2.3"/></symbol>
+    <symbol id="i-run" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7z"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"/></symbol>
+    <symbol id="i-new-file" viewBox="0 0 24 24"><path d="M5 2h9l5 5v15H5zM13 2v6h6M12 12v7M8.5 15.5h7"/></symbol>
+    <symbol id="i-new-folder" viewBox="0 0 24 24"><path d="M2 5h8l2 3h10v12H2zM15 11v6M12 14h6"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M18.5 10A7 7 0 0 0 6 7l-2 5M5.5 14A7 7 0 0 0 18 17l2-5"/></symbol>
+    <symbol id="i-collapse" viewBox="0 0 24 24"><path d="m8 3 4 4 4-4M8 21l4-4 4 4M3 8l4 4-4 4M21 8l-4 4 4 4"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M2 5h8l2 3h10v12H2z"/></symbol>
+  </svg>
+
+  <header class="titlebar">
+    <div class="brand"><span class="brand-mark">&lt;/&gt;</span><strong>IDELite</strong></div>
+    <nav class="menu" aria-label="Application menu">
+      <button data-command="new-file">File</button>
+      <button data-command="quick-open">Go</button>
+      <button data-command="toggle-panel">Terminal</button>
+      <button data-command="run">Run</button>
+      <button data-command="settings">Settings</button>
+    </nav>
+    <button id="command-center" class="command-center" data-command="quick-open">
+      <svg><use href="#i-search"/></svg><span id="title-workspace">Workspace</span>
+    </button>
+    <div class="title-actions"><span class="live-dot"></span><span>Local</span></div>
+  </header>
+
+  <div class="workbench">
+    <aside class="activitybar" aria-label="Primary sidebar">
+      <div>
+        <button class="activity active" data-view="explorer" title="Explorer (Ctrl+Shift+E)"><svg><use href="#i-files"/></svg></button>
+        <button class="activity" data-view="search" title="Search (Ctrl+Shift+F)"><svg><use href="#i-search"/></svg></button>
+        <button class="activity" data-view="source" title="Source Control"><svg><use href="#i-git"/></svg><span id="git-badge" class="badge hidden"></span></button>
+        <button class="activity" data-command="run" title="Run active file"><svg><use href="#i-run"/></svg></button>
+      </div>
+      <button class="activity" data-command="settings" title="Settings"><svg><use href="#i-settings"/></svg></button>
+    </aside>
+
+    <aside id="sidebar" class="sidebar">
+      <section id="view-explorer" class="side-view active">
+        <div class="side-title"><span>EXPLORER</span><button class="icon-button" data-command="open-workspace" title="Open folder"><svg><use href="#i-more"/></svg></button></div>
+        <div class="section-heading">
+          <span class="chevron">⌄</span><strong id="workspace-name">WORKSPACE</strong>
+          <span class="section-actions">
+            <button class="icon-button" data-command="new-file" title="New file"><svg><use href="#i-new-file"/></svg></button>
+            <button class="icon-button" data-command="new-folder" title="New folder"><svg><use href="#i-new-folder"/></svg></button>
+            <button class="icon-button" data-command="refresh" title="Refresh"><svg><use href="#i-refresh"/></svg></button>
+            <button class="icon-button" data-command="collapse" title="Collapse folders"><svg><use href="#i-collapse"/></svg></button>
+          </span>
+        </div>
+        <div id="file-tree" class="file-tree" role="tree"></div>
+        <div class="collapsed-section">⌃ <span>OUTLINE</span></div>
+        <div class="collapsed-section">⌃ <span>TIMELINE</span></div>
+      </section>
+
+      <section id="view-search" class="side-view">
+        <div class="side-title"><span>SEARCH</span></div>
+        <form id="search-form" class="search-form">
+          <div class="input-wrap"><input id="search-input" placeholder="Search" autocomplete="off"><button title="Search">↵</button></div>
+        </form>
+        <div id="search-summary" class="muted side-padding">Type to search across files</div>
+        <div id="search-results" class="search-results"></div>
+      </section>
+
+      <section id="view-source" class="side-view">
+        <div class="side-title"><span>SOURCE CONTROL</span><button class="icon-button" data-command="git-refresh"><svg><use href="#i-refresh"/></svg></button></div>
+        <pre id="git-output" class="git-output">Loading Git status…</pre>
+      </section>
+    </aside>
+
+    <main class="main-area">
+      <div id="tabs" class="tabs" role="tablist"></div>
+      <div id="breadcrumbs" class="breadcrumbs">IDELite › Welcome</div>
+      <section class="editor-area">
+        <div id="welcome" class="welcome">
+          <div class="welcome-logo">&lt;/&gt;</div>
+          <h1>IDELite</h1>
+          <p>A small editor for serious work.</p>
+          <div class="welcome-grid">
+            <div><h2>Start</h2>
+              <button data-command="new-file">＋ New File</button>
+              <button data-command="open-workspace">▱ Open Folder</button>
+              <button data-command="quick-open">⌕ Go to File</button>
+            </div>
+            <div><h2>Shortcuts</h2>
+              <p><span>Quick Open</span><kbd>Ctrl P</kbd></p>
+              <p><span>Save File</span><kbd>Ctrl S</kbd></p>
+              <p><span>Terminal</span><kbd>Ctrl `</kbd></p>
+            </div>
+          </div>
+        </div>
+        <div id="editor" class="editor hidden">
+          <div id="line-numbers" class="line-numbers" aria-hidden="true"></div>
+          <div class="code-layer">
+            <pre id="highlight" aria-hidden="true"></pre>
+            <textarea id="code-input" aria-label="Code editor" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+          </div>
+        </div>
+      </section>
+
+      <section id="panel" class="panel">
+        <div class="panel-header">
+          <div class="panel-tabs"><button class="active" data-panel="terminal">TERMINAL</button><button data-panel="output">OUTPUT</button></div>
+          <div><button class="icon-button" data-command="clear-terminal" title="Clear">⌫</button><button class="icon-button" data-command="toggle-panel" title="Close"><svg><use href="#i-close"/></svg></button></div>
+        </div>
+        <pre id="terminal-output" class="terminal-output"><span class="terminal-dim">IDELite terminal · commands run inside this workspace</span></pre>
+        <form id="terminal-form" class="terminal-form"><span id="terminal-prompt">.</span><span class="prompt-sign">$</span><input id="terminal-input" autocomplete="off" spellcheck="false" aria-label="Terminal command"></form>
+      </section>
+    </main>
+  </div>
+
+  <footer class="statusbar">
+    <button id="branch-status" data-view="source">⑂ —</button>
+    <span id="status-message">Ready</span>
+    <div class="status-right"><span id="cursor-position">Ln 1, Col 1</span><span id="indent-status">Spaces: 4</span><span>UTF-8</span><span id="language-status">Plain Text</span><span>◯</span></div>
+  </footer>
+
+  <div id="quick-open" class="modal-backdrop hidden">
+    <div class="quick-dialog" role="dialog" aria-modal="true">
+      <input id="quick-input" placeholder="Search files by name" autocomplete="off">
+      <div id="quick-results" class="quick-results"></div>
+    </div>
+  </div>
+
+  <div id="settings-modal" class="modal-backdrop hidden">
+    <div class="settings-dialog" role="dialog" aria-modal="true">
+      <div class="dialog-title"><h2>Settings</h2><button class="icon-button" data-command="close-settings"><svg><use href="#i-close"/></svg></button></div>
+      <label>Editor font size <input id="setting-font-size" type="number" min="10" max="28"></label>
+      <label>Tab size <select id="setting-tab-size"><option>2</option><option>4</option><option>8</option></select></label>
+      <label class="check-label"><input id="setting-word-wrap" type="checkbox"> Word wrap</label>
+      <div class="dialog-actions"><button data-command="close-settings">Cancel</button><button class="primary" data-command="save-settings">Save settings</button></div>
+    </div>
+  </div>
+
+  <div id="toast-region" class="toast-region" aria-live="polite"></div>
+  <script>window.IDELITE_BOOTSTRAP = __IDELITE_BOOTSTRAP__;</script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
