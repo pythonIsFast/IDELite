@@ -17,6 +17,7 @@ from typing import Any
 from flask import Flask, Response, jsonify, request
 
 from .database import Database
+from .updater import UpdateError, check_update, install_update
 from .workspace import Workspace, WorkspaceError
 
 DEFAULT_SETTINGS = {
@@ -67,6 +68,8 @@ def create_app(
     token = api_token or secrets.token_urlsafe(24)
     app.extensions["idelite_state"] = state
     app.extensions["idelite_token"] = token
+    app.extensions["update_started"] = threading.Event()
+    update_lock = threading.Lock()
 
     @app.before_request
     def protect_api() -> Response | None:
@@ -114,6 +117,30 @@ def create_app(
                 "recentWorkspaces": database.recent_workspaces(),
             }
         )
+
+    @app.get("/api/update")
+    def update_status() -> Response:
+        try:
+            return jsonify(check_update())
+        except UpdateError as error:
+            return jsonify({"error": str(error)}), 502
+
+    @app.post("/api/update")
+    def start_update() -> Response:
+        if not update_lock.acquire(blocking=False):
+            return jsonify({"error": "An update is already in progress"}), 409
+        try:
+            if app.extensions["update_started"].is_set():
+                raise UpdateError("An update is already pending; close IDELite to continue")
+            restart = ["/usr/bin/idelite", str(state.workspace.root)]
+            restart.extend(app.config.get("UPDATE_RESTART_FLAGS", []))
+            result = install_update(restart)
+            app.extensions["update_started"].set()
+            return jsonify(result), 202
+        except UpdateError as error:
+            return jsonify({"error": str(error)}), 409
+        finally:
+            update_lock.release()
 
     @app.put("/api/settings")
     def save_settings() -> Response:

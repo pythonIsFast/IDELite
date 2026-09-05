@@ -11,7 +11,7 @@ A compact VSCode-inspired desktop editor built with Python, Flask, SQLite, pyweb
 Every release provides a standalone Linux zip application and a Debian package:
 
 ```bash
-sudo apt install ./idelite_0.1.0_all.deb
+sudo apt install ./idelite_0.2.0_all.deb
 idelite /path/to/project
 ```
 
@@ -30,6 +30,32 @@ The package installs a desktop launcher and pulls in Python, GTK, and WebKitGTK 
 - Quick Open (`Ctrl+P`)
 - Persistent editor settings in SQLite
 - Per-launch token protection for the local Flask API
+
+## Automatic updates
+
+Installed Debian builds check the latest stable GitHub release on startup and when
+Settings opens. A green arrow on Settings indicates an available update. Choose
+**Settings → Install update** to download and verify the Debian package against
+`SHA256SUMS.txt`, then approve the restart and the system's administrator prompt.
+No package is downloaded or installed merely by checking for updates.
+
+Save or close all unsaved tabs first. Editing is locked during update preparation.
+The installer waits for IDELite to exit, uses `pkexec apt-get install`, and reopens
+the current workspace. If administrator approval is cancelled or installation
+fails, it tries to reopen the existing version. Details are recorded in
+`~/.local/share/idelite/update.log` (or `$XDG_DATA_HOME/idelite/update.log`).
+The installer never forcibly kills the editor; it aborts if the process has not
+exited within two minutes. In headless mode, stop the server manually after the
+UI reports that the package is verified, then reopen the browser after restart.
+
+Automatic installation is only offered for `/opt/idelite/idelite.pyz` installed
+by the Debian package, not source checkouts or portable PYZ files. A working
+Polkit authentication agent is required for the administrator dialog. Checksums
+protect download integrity, but are not independent cryptographic signatures;
+the updater trusts this repository's GitHub releases over HTTPS.
+
+**Upgrading from v0.1.0:** install the v0.2.0 DEB once manually; v0.1.0 does not
+contain the updater. Subsequent Debian updates can be started inside the app.
 
 ## Run from source
 
@@ -72,7 +98,7 @@ If `gi` is installed system-wide but unavailable in a virtual environment, use t
 ```bash
 python3 packaging/build_pyz.py
 packaging/build-deb.sh
-./dist/idelite-0.1.0.pyz /path/to/project
+./dist/idelite-0.2.0.pyz /path/to/project
 ```
 
 The builders vendor the Python packages but not Python or WebKitGTK. The PYZ builder fails when its output exceeds 5 MB. Tagged versions are built and published automatically through GitHub Actions.

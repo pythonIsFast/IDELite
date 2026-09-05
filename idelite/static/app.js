@@ -8,7 +8,8 @@
     "terminal-input", "terminal-prompt", "status-message", "cursor-position", "indent-status",
     "language-status", "quick-open", "quick-input", "quick-results", "settings-modal", "search-form",
     "search-input", "search-summary", "search-results", "git-output", "git-badge", "branch-status",
-    "setting-font-size", "setting-tab-size", "setting-word-wrap", "toast-region"
+    "setting-font-size", "setting-tab-size", "setting-word-wrap", "toast-region", "update-section",
+    "update-status", "update-button", "update-badge"
   ].map(id => [id, document.getElementById(id)]));
 
   const state = {
@@ -19,6 +20,9 @@
     activePath: null,
     selectedPath: null,
     settings: { fontSize: 14, tabSize: 4, wordWrap: false },
+    update: null,
+    updateBusy: false,
+    updateChecking: false,
     terminalHistory: [],
     terminalHistoryIndex: 0,
   };
@@ -506,11 +510,86 @@
     if (state.activePath) updateEditor();
   }
 
+  async function checkForUpdate() {
+    if (state.updateBusy || state.updateChecking) return;
+    state.updateChecking = true;
+    state.update = null;
+    elements["update-button"].disabled = true;
+    elements["update-status"].textContent = "Checking for updates…";
+    try {
+      const update = await api("/api/update");
+      state.update = update;
+      elements["update-section"].classList.toggle("hidden", !update.supported);
+      const available = update.supported && update.available && update.asset_available;
+      elements["update-badge"].classList.toggle("hidden", !available);
+      if (!update.supported) return;
+      if (!update.available) {
+        elements["update-status"].textContent = `IDELite ${update.current_version} is up to date.`;
+        elements["update-button"].textContent = "Check again";
+      } else if (!update.asset_available) {
+        elements["update-status"].textContent = `Version ${update.latest_version} is available, but its Debian package is missing.`;
+        elements["update-button"].textContent = "Check again";
+      } else {
+        elements["update-status"].textContent = `Version ${update.latest_version} is available (installed: ${update.current_version}).`;
+        elements["update-button"].textContent = "Install update";
+      }
+    } catch (error) {
+      elements["update-badge"].classList.add("hidden");
+      elements["update-section"].classList.remove("hidden");
+      elements["update-status"].textContent = error.message;
+      elements["update-button"].textContent = "Try again";
+    } finally {
+      state.updateChecking = false;
+      elements["update-button"].disabled = false;
+    }
+  }
+
+  function setUpdateBusy(busy) {
+    state.updateBusy = busy;
+    document.body.classList.toggle("updating", busy);
+    elements["code-input"].readOnly = busy;
+    elements["terminal-input"].disabled = busy;
+    elements["update-button"].disabled = busy;
+  }
+
+  async function runUpdate() {
+    if (state.updateBusy || state.updateChecking) return;
+    if (!state.update?.available || !state.update?.asset_available) {
+      await checkForUpdate();
+      return;
+    }
+    if ([...state.files.values()].some(file => file.content !== file.savedContent)) {
+      toast("Save or close all unsaved files before updating.", true);
+      return;
+    }
+    if (!confirm("Install the update and restart IDELite? Administrator approval will be requested.")) return;
+    setUpdateBusy(true);
+    elements["update-status"].textContent = "Downloading and verifying the update…";
+    try {
+      const result = await api("/api/update", { method: "POST" });
+      elements["update-status"].textContent = `IDELite ${result.version} verified. Close IDELite (or stop the headless server) within two minutes to install.`;
+      elements["update-button"].textContent = "Waiting for restart";
+    } catch (error) {
+      elements["update-status"].textContent = error.message;
+      elements["update-button"].textContent = "Try again";
+      setUpdateBusy(false);
+      return;
+    }
+    if (window.pywebview?.api?.quit_for_update) {
+      try {
+        await window.pywebview.api.quit_for_update();
+      } catch {
+        toast("Please close IDELite manually to complete the update.", true);
+      }
+    }
+  }
+
   function showSettings() {
     elements["setting-font-size"].value = state.settings.fontSize;
     elements["setting-tab-size"].value = state.settings.tabSize;
     elements["setting-word-wrap"].checked = state.settings.wordWrap;
     elements["settings-modal"].classList.remove("hidden");
+    checkForUpdate();
   }
 
   async function saveSettings() {
@@ -555,10 +634,12 @@
     settings: showSettings,
     "close-settings": () => elements["settings-modal"].classList.add("hidden"),
     "save-settings": saveSettings,
+    update: runUpdate,
     "git-refresh": updateGit,
   };
 
   document.addEventListener("click", event => {
+    if (state.updateBusy) return;
     const commandElement = event.target.closest("[data-command]");
     if (commandElement) commands[commandElement.dataset.command]?.();
     const viewElement = event.target.closest("[data-view]");
@@ -570,6 +651,7 @@
   elements["code-input"].addEventListener("click", updateCursor);
   elements["code-input"].addEventListener("keyup", updateCursor);
   elements["code-input"].addEventListener("keydown", event => {
+    if (state.updateBusy) return;
     if (event.key === "Tab") {
       event.preventDefault();
       insertAtCursor(" ".repeat(state.settings.tabSize));
@@ -601,6 +683,7 @@
   }));
 
   document.addEventListener("keydown", event => {
+    if (state.updateBusy) return;
     const modifier = event.ctrlKey || event.metaKey;
     if (modifier && event.key.toLowerCase() === "s") { event.preventDefault(); saveActive(); }
     if (modifier && event.key.toLowerCase() === "p") { event.preventDefault(); showQuickOpen(); }
@@ -618,6 +701,7 @@
     try {
       const [appState] = await Promise.all([api("/api/state"), refreshTree(), updateGit()]);
       applySettings(appState.settings);
+      checkForUpdate();
       setStatus("Ready");
     } catch (error) {
       toast(error.message, true);

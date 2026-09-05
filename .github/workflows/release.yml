@@ -22,11 +22,18 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Test
-        run: python -m unittest discover -s tests -v
+        run: |
+          python -m unittest discover -s tests -v
+          node --check idelite/static/app.js
+          node --test tests/test_update_ui.cjs
       - name: Build PYZ and Debian package
         run: |
           python packaging/build_pyz.py
           packaging/build-deb.sh
+          test "$(stat -c %s dist/idelite-*.pyz)" -lt 5242880
+          test "$(stat -c %s dist/idelite_*_all.deb)" -lt 5242880
+          dist/idelite-*.pyz --help
+          python -I tests/smoke_package.py dist/idelite-*.pyz
       - name: Create checksums
         working-directory: dist
         run: sha256sum idelite-*.pyz idelite_*_all.deb > SHA256SUMS.txt

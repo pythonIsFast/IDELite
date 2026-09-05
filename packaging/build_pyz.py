@@ -36,6 +36,8 @@ def main() -> None:
         )
         shutil.copytree(ROOT / "idelite", stage / "idelite")
         shutil.copy2(ROOT / "run.py", stage / "run.py")
+        for name in ("LICENSE", "NOTICE", "VERSION"):
+            shutil.copy2(ROOT / name, stage / name)
         (stage / "__main__.py").write_text("from run import main\nmain()\n", encoding="utf-8")
 
         for path in list(stage.rglob("*")):

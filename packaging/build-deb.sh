@@ -10,6 +10,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 pyz="$(cd "$(dirname "$pyz")" && pwd)/$(basename "$pyz")"
 stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
+chmod 755 "$stage"
 
 if [[ ! -f "$pyz" ]]; then
     echo "Missing zip application: $pyz" >&2
@@ -33,7 +34,7 @@ Section: devel
 Priority: optional
 Architecture: all
 Maintainer: pythonIsFast <pythonIsFast@users.noreply.github.com>
-Depends: python3 (>= 3.10), python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0
+Depends: python3 (>= 3.10), python3-gi, python3-gi-cairo, gir1.2-gtk-3.0, gir1.2-webkit2-4.1 | gir1.2-webkit2-4.0, pkexec | policykit-1, apt
 Suggests: git, nodejs
 Homepage: https://github.com/pythonIsFast/IDELite
 Description: Compact VSCode-inspired desktop editor

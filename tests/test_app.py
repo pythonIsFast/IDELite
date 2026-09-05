@@ -3,6 +3,9 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
+
+from idelite.updater import UpdateError
 
 from idelite import create_app
 
@@ -55,6 +58,37 @@ class AppTests(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         response = self.client.get("/api/search?q=changed", headers=self.headers)
         self.assertEqual(response.get_json()["results"][0]["path"], "main.py")
+
+    def test_source_run_does_not_offer_self_update(self) -> None:
+        response = self.client.get("/api/update", headers=self.headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), {"supported": False})
+
+    def test_update_requires_token_and_only_starts_once(self) -> None:
+        with mock.patch("idelite.app.install_update", return_value={"status": "started", "version": "0.2.0"}) as install:
+            self.assertEqual(self.client.post("/api/update").status_code, 403)
+            install.assert_not_called()
+            self.assertEqual(self.client.post("/api/update", headers=self.headers).status_code, 202)
+            install.assert_called_once_with(["/usr/bin/idelite", str(self.root)])
+            self.assertEqual(self.client.post("/api/update", headers=self.headers).status_code, 409)
+            self.assertEqual(install.call_count, 1)
+
+    def test_failed_update_can_be_retried(self) -> None:
+        with mock.patch("idelite.app.install_update", side_effect=UpdateError("offline")):
+            response = self.client.post("/api/update", headers=self.headers)
+            self.assertEqual(response.status_code, 409)
+            self.assertFalse(self.app.extensions["update_started"].is_set())
+        with mock.patch("idelite.app.install_update", return_value={"status": "started"}):
+            self.assertEqual(self.client.post("/api/update", headers=self.headers).status_code, 202)
+
+    def test_update_restart_uses_current_workspace_and_headless_flags(self) -> None:
+        folder = self.root / "other"
+        folder.mkdir()
+        self.client.post("/api/workspace", headers=self.headers, json={"path": str(folder)})
+        self.app.config["UPDATE_RESTART_FLAGS"] = ["--headless", "--port", "9000"]
+        with mock.patch("idelite.app.install_update", return_value={"status": "started"}) as install:
+            self.client.post("/api/update", headers=self.headers)
+        install.assert_called_once_with(["/usr/bin/idelite", str(folder), "--headless", "--port", "9000"])
 
     def test_settings_are_persisted(self) -> None:
         self.client.put(

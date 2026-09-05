@@ -2,3 +2,9 @@ IDELite
 Copyright 2026 pythonIsFast
 
 Licensed under the Apache License, Version 2.0.
+
+The updater and its UI flow are adapted from pythonIsFast/CodeLite.
+Copyright 2026 Code Lite contributors, Apache License 2.0.
+https://github.com/pythonIsFast/CodeLite
+Modifications include IDELite package names, bounded downloads, validation,
+unsaved-change protection, and graceful shutdown before installation.
