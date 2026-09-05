@@ -8,3 +8,4 @@ Terminal=false
 Categories=Development;IDE;
 Keywords=editor;code;development;IDE;
 StartupNotify=true
+StartupWMClass=idelite

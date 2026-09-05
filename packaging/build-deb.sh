@@ -21,7 +21,7 @@ install -Dm755 "$pyz" "$stage/opt/idelite/idelite.pyz"
 install -Dm755 "$root/packaging/linux/idelite" "$stage/usr/bin/idelite"
 install -Dm644 "$root/packaging/linux/idelite.desktop" \
     "$stage/usr/share/applications/idelite.desktop"
-install -Dm644 "$root/packaging/linux/idelite.svg" \
+install -Dm644 "$root/idelite/static/icon.svg" \
     "$stage/usr/share/icons/hicolor/scalable/apps/idelite.svg"
 install -Dm644 "$root/LICENSE" "$stage/usr/share/doc/idelite/copyright"
 install -Dm644 "$root/NOTICE" "$stage/usr/share/doc/idelite/NOTICE"

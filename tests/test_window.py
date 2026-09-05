@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import importlib.resources
+import sys
 import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from run import WindowApi, webview_assets
+from run import WindowApi, configure_linux_identity, run_native, webview_assets
 
 
 def bridge_window():
@@ -17,6 +19,36 @@ def bridge_window():
 
 
 class WindowTests(unittest.TestCase):
+    def test_linux_identity_matches_desktop_entry(self) -> None:
+        gi = mock.Mock()
+        repository = mock.Mock()
+        with mock.patch.dict(sys.modules, {"gi": gi, "gi.repository": repository}), mock.patch("run.sys.platform", "linux"):
+            configure_linux_identity()
+        repository.GLib.set_prgname.assert_called_once_with("idelite")
+        repository.GLib.set_application_name.assert_called_once_with("IDELite")
+        repository.Gdk.set_program_class.assert_called_once_with("idelite")
+        desktop = Path("packaging/linux/idelite.desktop").read_text()
+        self.assertIn("StartupWMClass=idelite", desktop)
+        self.assertIn("Icon=idelite", desktop)
+
+    def test_native_start_passes_existing_icon(self) -> None:
+        import webview
+
+        def start(**options):
+            self.assertEqual(Path(options["icon"]).read_bytes(),
+                             importlib.resources.files("idelite").joinpath("static", "icon.svg").read_bytes())
+        app = SimpleNamespace(extensions={"update_started": threading.Event()})
+        with (
+            mock.patch("run.make_server") as server,
+            mock.patch("run.threading.Thread"),
+            mock.patch("run.configure_linux_identity"),
+            mock.patch.object(webview, "create_window"),
+            mock.patch.object(webview, "start", side_effect=start) as start_mock,
+        ):
+            run_native(app)
+        start_mock.assert_called_once()
+        server.return_value.shutdown.assert_called_once()
+
     def test_quit_requires_staged_update(self) -> None:
         self.assertFalse(WindowApi(threading.Event()).quit_for_update())
 

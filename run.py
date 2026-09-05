@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.resources
+import sys
 import tempfile
 import threading
 import webbrowser
@@ -67,6 +68,22 @@ def webview_assets():
         yield
 
 
+def configure_linux_identity() -> None:
+    """Match GTK's X11 WM_CLASS and Wayland app ID to idelite.desktop."""
+    if not sys.platform.startswith("linux"):
+        return
+    try:
+        import gi
+
+        gi.require_version("Gdk", "3.0")
+        from gi.repository import GLib, Gdk
+    except (ImportError, ValueError):
+        return
+    GLib.set_prgname("idelite")
+    GLib.set_application_name("IDELite")
+    Gdk.set_program_class("idelite")
+
+
 def run_native(app: object) -> None:
     server = make_server("127.0.0.1", 0, app, threaded=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -74,6 +91,7 @@ def run_native(app: object) -> None:
     url = f"http://127.0.0.1:{server.server_port}"
 
     try:
+        configure_linux_identity()
         import webview
 
         webview.create_window(
@@ -85,8 +103,9 @@ def run_native(app: object) -> None:
             background_color="#181818",
             js_api=WindowApi(app.extensions["update_started"]),
         )
-        with webview_assets():
-            webview.start(debug=False)
+        icon = importlib.resources.files("idelite").joinpath("static", "icon.svg")
+        with webview_assets(), importlib.resources.as_file(icon) as icon_path:
+            webview.start(debug=False, icon=str(icon_path))
     except ImportError:
         print(f"pywebview is not installed; opening {url} in your browser")
         webbrowser.open(url)

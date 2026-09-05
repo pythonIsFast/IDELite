@@ -1,5 +1,6 @@
 """Smoke-test bundled resources without relying on installed Python packages."""
 
+import importlib.resources
 import sys
 import tempfile
 from pathlib import Path
@@ -20,6 +21,10 @@ def main() -> None:
         assert client.get("/").status_code == 200
         assert client.get("/static/app.js").status_code == 200
         assert client.get("/api/update", headers={"X-IDELite-Token": "smoke"}).json == {"supported": False}
+
+    icon = importlib.resources.files("idelite").joinpath("static", "icon.svg")
+    with importlib.resources.as_file(icon) as icon_path:
+        assert icon_path.is_file() and b"<svg" in icon_path.read_bytes()
 
     with webview_assets():
         location = Path(util.get_js_dir())
