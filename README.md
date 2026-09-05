@@ -11,7 +11,7 @@ A compact VSCode-inspired desktop editor built with Python, Flask, SQLite, pyweb
 Every release provides a standalone Linux zip application and a Debian package:
 
 ```bash
-sudo apt install ./idelite_0.3.0_all.deb
+sudo apt install ./idelite_0.3.2_all.deb
 idelite /path/to/project
 ```
 
@@ -29,7 +29,7 @@ The package installs a desktop launcher and pulls in Python, GTK, and WebKitGTK 
 - Git status, staging, commit, diffs, and compact commit graph
 - Editor minimap, file outline, find, and editor navigation
 - Quick Open (`Ctrl+P`)
-- Persistent editor settings in SQLite
+- Persistent editor settings and workspace sessions in SQLite
 - Per-launch token protection for the local Flask API
 
 ## Automatic updates
@@ -57,6 +57,15 @@ the updater trusts this repository's GitHub releases over HTTPS.
 
 **Upgrading from v0.1.0:** install the v0.2.0 DEB once manually; v0.1.0 does not
 contain the updater. Subsequent Debian updates can be started inside the app.
+
+## Restoring your workspace
+
+IDELite reopens the most recent existing workspace when started without a path,
+and restores its open files, active tab, and expanded folders. Session data is
+stored in `~/.local/share/idelite/idelite.db` (or
+`$XDG_DATA_HOME/idelite/idelite.db`). It contains only relative paths and folder
+state—never file contents or unsaved edits. Files and folders that no longer
+exist are skipped during restoration.
 
 ## Run from source
 
@@ -99,7 +108,7 @@ If `gi` is installed system-wide but unavailable in a virtual environment, use t
 ```bash
 python3 packaging/build_pyz.py
 packaging/build-deb.sh
-./dist/idelite-0.3.0.pyz /path/to/project
+./dist/idelite-0.3.2.pyz /path/to/project
 ```
 
 The builders vendor the Python packages but not Python or WebKitGTK. The PYZ builder fails when its output exceeds 5 MB. Tagged versions are built and published automatically through GitHub Actions.

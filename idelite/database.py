@@ -31,6 +31,11 @@ class Database:
                     path TEXT PRIMARY KEY,
                     opened_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
                 );
+                CREATE TABLE IF NOT EXISTS workspace_sessions (
+                    path TEXT PRIMARY KEY,
+                    state TEXT NOT NULL,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                );
                 """
             )
 
@@ -69,3 +74,38 @@ class Database:
                 (limit,),
             ).fetchall()
         return [row["path"] for row in rows]
+
+    def latest_existing_workspace(self) -> Path | None:
+        with self.connect() as connection:
+            rows = connection.execute(
+                "SELECT path FROM recent_workspaces ORDER BY opened_at DESC"
+            ).fetchall()
+        for row in rows:
+            path = Path(row["path"]).expanduser()
+            if path.is_dir():
+                return path.resolve()
+        return None
+
+    def workspace_session(self, path: Path) -> dict[str, Any]:
+        with self.connect() as connection:
+            row = connection.execute(
+                "SELECT state FROM workspace_sessions WHERE path = ?", (str(path),)
+            ).fetchone()
+        if row is None:
+            return {"openFiles": [], "activeFile": None, "expandedFolders": []}
+        try:
+            state = json.loads(row["state"])
+        except json.JSONDecodeError:
+            return {"openFiles": [], "activeFile": None, "expandedFolders": []}
+        return state if isinstance(state, dict) else {"openFiles": [], "activeFile": None, "expandedFolders": []}
+
+    def set_workspace_session(self, path: Path, state: dict[str, Any]) -> None:
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO workspace_sessions(path, state, updated_at)
+                VALUES (?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(path) DO UPDATE SET state = excluded.state, updated_at = CURRENT_TIMESTAMP
+                """,
+                (str(path), json.dumps(state, separators=(",", ":"))),
+            )

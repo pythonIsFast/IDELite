@@ -5,7 +5,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from idelite.database import Database
 from idelite.updater import UpdateError
+from run import default_workspace
 
 from idelite import create_app
 
@@ -94,6 +96,51 @@ class AppTests(unittest.TestCase):
         with mock.patch("idelite.app.install_update", return_value={"status": "started"}) as install:
             self.client.post("/api/update", headers=self.headers)
         install.assert_called_once_with(["/usr/bin/idelite", str(folder), "--headless", "--port", "9000"])
+
+    def test_workspace_session_filters_missing_paths_and_is_returned_in_state(self) -> None:
+        (self.root / "src").mkdir()
+        (self.root / "src" / "other.py").write_text("pass\n", encoding="utf-8")
+        response = self.client.put(
+            "/api/session",
+            headers=self.headers,
+            json={
+                "openFiles": ["main.py", "src/other.py", "missing.py", "main.py"],
+                "activeFile": "missing.py",
+                "expandedFolders": ["src", "missing", "src"],
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        session = response.get_json()["session"]
+        self.assertEqual(session["openFiles"], ["main.py", "src/other.py"])
+        self.assertEqual(session["activeFile"], "src/other.py")
+        self.assertEqual(session["expandedFolders"], ["src"])
+        state = self.client.get("/api/state", headers=self.headers).get_json()
+        self.assertEqual(state["session"], session)
+
+    def test_sessions_are_isolated_by_workspace(self) -> None:
+        self.client.put("/api/session", headers=self.headers, json={"openFiles": ["main.py"], "activeFile": "main.py", "expandedFolders": []})
+        other = self.root / "other"
+        other.mkdir()
+        (other / "second.py").write_text("pass\n", encoding="utf-8")
+        response = self.client.post("/api/workspace", headers=self.headers, json={"path": str(other)})
+        self.assertEqual(response.get_json()["session"]["openFiles"], [])
+        self.client.put("/api/session", headers=self.headers, json={"openFiles": ["second.py"], "activeFile": "second.py", "expandedFolders": []})
+        self.client.post("/api/workspace", headers=self.headers, json={"path": str(self.root)})
+        state = self.client.get("/api/state", headers=self.headers).get_json()
+        self.assertEqual(state["session"]["activeFile"], "main.py")
+
+    def test_default_workspace_uses_latest_existing_workspace(self) -> None:
+        data = self.root / "data"
+        database = Database(data / "idelite.db")
+        old = self.root / "old"
+        latest = self.root / "latest"
+        old.mkdir()
+        latest.mkdir()
+        database.touch_workspace(old)
+        database.touch_workspace(latest)
+        old.rmdir()
+        with mock.patch("run.data_directory", return_value=data):
+            self.assertEqual(default_workspace(), latest.resolve())
 
     def test_settings_are_persisted(self) -> None:
         self.client.put(

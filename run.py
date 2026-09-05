@@ -15,11 +15,13 @@ from pathlib import Path
 from werkzeug.serving import make_server
 
 from idelite import create_app
+from idelite.app import data_directory
+from idelite.database import Database
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="A tiny VSCode-inspired editor")
-    parser.add_argument("workspace", nargs="?", default=".", help="Folder to open")
+    parser.add_argument("workspace", nargs="?", help="Folder to open (defaults to the last workspace)")
     parser.add_argument("--headless", action="store_true", help="Run in the browser")
     parser.add_argument("--port", type=int, default=7483, help="Headless server port")
     return parser.parse_args()
@@ -140,9 +142,13 @@ def run_native(app: object) -> None:
         server.shutdown()
 
 
+def default_workspace() -> Path:
+    return Database(data_directory() / "idelite.db").latest_existing_workspace() or Path.cwd().resolve()
+
+
 def main() -> None:
     args = parse_args()
-    workspace = Path(args.workspace).expanduser().resolve()
+    workspace = Path(args.workspace).expanduser().resolve() if args.workspace else default_workspace()
     app = create_app(workspace)
     if args.headless:
         app.config["UPDATE_RESTART_FLAGS"] = ["--headless", "--port", str(args.port)]

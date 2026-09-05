@@ -99,6 +99,7 @@
           else state.expandedFolders.add(node.path);
           selectTreePath(node.path);
           renderTree();
+          scheduleSessionSave();
         });
       } else {
         row.addEventListener("click", () => {
@@ -117,6 +118,45 @@
     document.querySelector(`.tree-row[data-path="${CSS.escape(path)}"]`)?.classList.add("selected");
   }
 
+  let sessionTimer = null;
+
+  function sessionPayload() {
+    return {
+      openFiles: [...state.files.keys()],
+      activeFile: state.activePath,
+      expandedFolders: [...state.expandedFolders],
+    };
+  }
+
+  async function persistSession(keepalive = false) {
+    const payload = sessionPayload();
+    if (keepalive) {
+      try {
+        await fetch("/api/session", {
+          method: "PUT",
+          keepalive: true,
+          headers: { "X-IDELite-Token": bootstrap.token, "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      } catch { /* Closing must not block the native window. */ }
+      return;
+    }
+    try { await api("/api/session", { method: "PUT", body: payload }); }
+    catch (error) { toast(`Could not restore this session: ${error.message}`, true); }
+  }
+
+  function scheduleSessionSave() {
+    clearTimeout(sessionTimer);
+    sessionTimer = setTimeout(() => persistSession(), 350);
+  }
+
+  async function restoreSession(session) {
+    state.expandedFolders = new Set(session?.expandedFolders || []);
+    renderTree();
+    for (const path of session?.openFiles || []) await openFile(path, null, false);
+    if (session?.activeFile && state.files.has(session.activeFile)) activateFile(session.activeFile, false);
+  }
+
   async function refreshTree() {
     try {
       const data = await api("/api/tree");
@@ -128,7 +168,7 @@
     }
   }
 
-  async function openFile(path, line = null) {
+  async function openFile(path, line = null, record = true) {
     try {
       let file = state.files.get(path);
       if (!file) {
@@ -136,7 +176,7 @@
         file = { path, content: data.content, savedContent: data.content, scrollTop: 0, scrollLeft: 0, selectionStart: 0, selectionEnd: 0 };
         state.files.set(path, file);
       }
-      activateFile(path);
+      activateFile(path, record);
       if (line) goToLine(line);
     } catch (error) {
       toast(error.message, true);
@@ -169,6 +209,7 @@
     renderTabs();
     updateEditor();
     updateBreadcrumbs();
+    scheduleSessionSave();
     elements["code-input"].focus();
   }
 
@@ -217,6 +258,7 @@
       else showWelcome();
     }
     renderTabs();
+    scheduleSessionSave();
   }
 
   function showWelcome() {
@@ -521,6 +563,7 @@
     if (!path || path === state.workspace) return;
     if ([...state.files.values()].some(file => file.content !== file.savedContent) && !confirm("Close files with unsaved changes?")) return;
     try {
+      await persistSession();
       const data = await api("/api/workspace", { method: "POST", body: { path } });
       state.workspace = data.workspace;
       state.workspaceName = data.name;
@@ -528,11 +571,13 @@
       state.navigation = [];
       state.navigationIndex = -1;
       state.selectedPath = null;
+      state.expandedFolders = new Set();
       elements["terminal-prompt"].textContent = ".";
       updateWorkspaceLabels();
       showWelcome();
       renderTabs();
       await Promise.all([refreshTree(), updateGit()]);
+      await restoreSession(data.session);
     } catch (error) {
       toast(error.message, true);
     }
@@ -819,7 +864,7 @@
     "new-file": () => createItem("file"),
     "new-folder": () => createItem("directory"),
     refresh: refreshTree,
-    collapse: () => { state.expandedFolders.clear(); renderTree(); },
+    collapse: () => { state.expandedFolders.clear(); renderTree(); scheduleSessionSave(); },
     "quick-open": showQuickOpen,
     "open-workspace": openWorkspace,
     "toggle-panel": () => togglePanel(),
@@ -956,11 +1001,17 @@
     }
   });
 
+  window.addEventListener("pagehide", () => {
+    clearTimeout(sessionTimer);
+    persistSession(true);
+  });
+
   async function initialize() {
     updateWorkspaceLabels();
     try {
       const [appState] = await Promise.all([api("/api/state"), refreshTree(), updateGit()]);
       applySettings(appState.settings);
+      await restoreSession(appState.session);
       const initialFile = new URLSearchParams(window.location.search).get("file");
       if (initialFile) await openFile(initialFile);
       checkForUpdate();

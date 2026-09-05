@@ -45,8 +45,41 @@ class AppState:
             self.terminal_cwd = workspace.root
             self.database.touch_workspace(workspace.root)
 
+    def session(self) -> dict[str, Any]:
+        return self.database.workspace_session(self.workspace.root)
 
-def _data_directory() -> Path:
+    def save_session(self, payload: dict[str, Any]) -> dict[str, Any]:
+        def valid_paths(key: str, kind: str) -> list[str]:
+            values = payload.get(key, [])
+            if not isinstance(values, list):
+                raise WorkspaceError(f"{key} must be a list")
+            result: list[str] = []
+            for value in values:
+                if not isinstance(value, str) or value in result:
+                    continue
+                try:
+                    path = self.workspace.resolve(value, must_exist=True)
+                except WorkspaceError:
+                    continue
+                if (kind == "file" and path.is_file()) or (kind == "directory" and path.is_dir()):
+                    result.append(self.workspace.relative(path))
+            return result
+
+        open_files = valid_paths("openFiles", "file")
+        expanded_folders = valid_paths("expandedFolders", "directory")
+        active_file = payload.get("activeFile")
+        if active_file not in open_files:
+            active_file = open_files[-1] if open_files else None
+        session = {
+            "openFiles": open_files,
+            "activeFile": active_file,
+            "expandedFolders": expanded_folders,
+        }
+        self.database.set_workspace_session(self.workspace.root, session)
+        return session
+
+
+def data_directory() -> Path:
     if sys.platform == "win32":
         base = Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local"))
     else:
@@ -65,7 +98,7 @@ def create_app(
     app.config["MAX_CONTENT_LENGTH"] = 3 * 1024 * 1024
 
     root = Path(workspace or Path.cwd())
-    database = Database(Path(database_path) if database_path else _data_directory() / "idelite.db")
+    database = Database(Path(database_path) if database_path else data_directory() / "idelite.db")
     state = AppState(root, database)
     token = api_token or secrets.token_urlsafe(24)
     app.extensions["idelite_state"] = state
@@ -117,9 +150,14 @@ def create_app(
                 "workspace": str(state.workspace.root),
                 "name": state.workspace.root.name,
                 "settings": settings,
+                "session": state.session(),
                 "recentWorkspaces": database.recent_workspaces(),
             }
         )
+
+    @app.put("/api/session")
+    def save_session() -> Response:
+        return jsonify({"session": state.save_session(_json_object())})
 
     @app.get("/api/update")
     def update_status() -> Response:
@@ -166,7 +204,11 @@ def create_app(
         if not isinstance(path, str) or not path.strip():
             raise WorkspaceError("A workspace path is required")
         state.change_workspace(Path(path))
-        return jsonify({"workspace": str(state.workspace.root), "name": state.workspace.root.name})
+        return jsonify({
+            "workspace": str(state.workspace.root),
+            "name": state.workspace.root.name,
+            "session": state.session(),
+        })
 
     @app.get("/api/tree")
     def get_tree() -> Response:
