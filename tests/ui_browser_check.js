@@ -22,6 +22,9 @@
   window.confirm = () => true;
   try {
     await wait(() => document.querySelector('.tab.active') && document.querySelector('.commit-row'), 'initial file and history');
+    check(document.getElementById('view-explorer').classList.contains('active'), 'Explorer is the default sidebar');
+    check(document.querySelector('[data-view="explorer"]').classList.contains('active'), 'Explorer activity icon is active');
+    check(document.querySelectorAll('.tree-children:not(.collapsed)').length === 0, 'All folders start collapsed');
     check($('code-input').value.includes('def run'), 'Initial file loaded');
     check($('cursor-position').textContent === 'Ln 1, Col 1', 'Initial caret is at first line');
     check($('minimap-canvas').width > 0, 'Minimap rendered');

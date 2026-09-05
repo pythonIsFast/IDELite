@@ -7,9 +7,7 @@ from pathlib import Path
 from typing import Any
 
 
-IGNORED_DIRECTORIES = {".git", ".idea", ".venv", "__pycache__", "node_modules"}
 MAX_FILE_SIZE = 2 * 1024 * 1024
-MAX_TREE_ITEMS = 5000
 
 
 class WorkspaceError(ValueError):
@@ -38,10 +36,7 @@ class Workspace:
         return path.relative_to(self.root).as_posix()
 
     def tree(self) -> list[dict[str, Any]]:
-        count = 0
-
         def visit(directory: Path) -> list[dict[str, Any]]:
-            nonlocal count
             nodes: list[dict[str, Any]] = []
             try:
                 entries = sorted(
@@ -52,11 +47,8 @@ class Workspace:
                 return nodes
 
             for entry in entries:
-                if count >= MAX_TREE_ITEMS:
-                    break
-                if entry.name in IGNORED_DIRECTORIES or entry.name.startswith(".idelite-"):
+                if entry.name.startswith(".idelite-"):
                     continue
-                count += 1
                 try:
                     is_directory = entry.is_dir()
                     node = {
@@ -132,8 +124,7 @@ class Workspace:
         if not query_lower:
             return []
         results: list[dict[str, Any]] = []
-        for directory, names, files in os.walk(self.root):
-            names[:] = [name for name in names if name not in IGNORED_DIRECTORIES]
+        for directory, _names, files in os.walk(self.root):
             for filename in files:
                 path = Path(directory) / filename
                 try:

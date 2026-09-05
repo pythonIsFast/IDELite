@@ -60,9 +60,9 @@
   <div class="workbench">
     <aside class="activitybar" aria-label="Primary sidebar">
       <div>
-        <button class="activity" data-view="explorer" title="Explorer (Ctrl+Shift+E)" aria-label="Explorer"><svg><use href="#i-files"/></svg></button>
+        <button class="activity active" data-view="explorer" title="Explorer (Ctrl+Shift+E)" aria-label="Explorer"><svg><use href="#i-files"/></svg></button>
         <button class="activity" data-view="search" title="Search (Ctrl+Shift+F)" aria-label="Search"><svg><use href="#i-search"/></svg></button>
-        <button class="activity active" data-view="source" title="Source Control" aria-label="Source Control"><svg><use href="#i-git"/></svg><span id="git-badge" class="badge hidden"></span></button>
+        <button class="activity" data-view="source" title="Source Control" aria-label="Source Control"><svg><use href="#i-git"/></svg><span id="git-badge" class="badge hidden"></span></button>
         <button class="activity" data-view="run" title="Run" aria-label="Run"><svg><use href="#i-run"/></svg></button>
         <button class="activity" data-view="outline" title="Outline" aria-label="Outline"><svg><use href="#i-outline"/></svg></button>
         <button class="activity" data-command="toggle-panel" title="Terminal" aria-label="Terminal"><svg><use href="#i-terminal"/></svg></button>
@@ -74,7 +74,7 @@
     </aside>
 
     <aside id="sidebar" class="sidebar">
-      <section id="view-explorer" class="side-view">
+      <section id="view-explorer" class="side-view active">
         <div class="side-title"><span>EXPLORER</span><button class="icon-button" data-command="open-workspace" title="Open folder"><svg><use href="#i-more"/></svg></button></div>
         <div class="section-heading">
           <span class="chevron">⌄</span><strong id="workspace-name">WORKSPACE</strong>
@@ -93,7 +93,7 @@
         <div id="search-summary" class="muted side-padding">Type to search across files</div>
         <div id="search-results" class="search-results"></div>
       </section>
-      <section id="view-source" class="side-view active">
+      <section id="view-source" class="side-view">
         <div class="side-title"><span>SOURCE CONTROL</span><div>
           <button class="icon-button" data-command="git-refresh" title="Refresh source control"><svg><use href="#i-refresh"/></svg></button>
           <button class="icon-button" data-command="git-terminal" title="Open Git terminal"><svg><use href="#i-more"/></svg></button>

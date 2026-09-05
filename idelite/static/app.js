@@ -19,6 +19,7 @@
     workspaceName: bootstrap.name,
     tree: [],
     files: new Map(),
+    expandedFolders: new Set(),
     activePath: null,
     selectedPath: null,
     settings: { fontSize: 14, tabSize: 4, wordWrap: false, minimap: true },
@@ -88,13 +89,16 @@
 
       if (node.type === "directory") {
         const children = document.createElement("div");
-        children.className = "tree-children";
+        const expanded = state.expandedFolders.has(node.path);
+        children.className = `tree-children${expanded ? "" : " collapsed"}`;
         children.append(...renderNodes(node.children || [], depth + 1));
+        chevron.classList.toggle("closed", !expanded);
         wrapper.append(children);
         row.addEventListener("click", () => {
-          const closed = children.classList.toggle("collapsed");
-          chevron.classList.toggle("closed", closed);
+          if (state.expandedFolders.has(node.path)) state.expandedFolders.delete(node.path);
+          else state.expandedFolders.add(node.path);
           selectTreePath(node.path);
+          renderTree();
         });
       } else {
         row.addEventListener("click", () => {
@@ -815,7 +819,7 @@
     "new-file": () => createItem("file"),
     "new-folder": () => createItem("directory"),
     refresh: refreshTree,
-    collapse: () => document.querySelectorAll(".tree-children").forEach(item => item.classList.add("collapsed")),
+    collapse: () => { state.expandedFolders.clear(); renderTree(); },
     "quick-open": showQuickOpen,
     "open-workspace": openWorkspace,
     "toggle-panel": () => togglePanel(),

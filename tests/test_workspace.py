@@ -20,10 +20,24 @@ class WorkspaceTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temporary.cleanup()
 
-    def test_tree_hides_large_dependency_directories(self) -> None:
+    def test_tree_includes_hidden_and_dependency_directories_without_limit(self) -> None:
+        for name in (".venv", "node_modules", "__pycache__"):
+            (self.root / name).mkdir()
+        (self.root / ".idelite-not-a-real-file.tmp").write_text("temporary")
         tree = self.workspace.tree()
-        self.assertEqual([node["name"] for node in tree], ["src"])
-        self.assertEqual(tree[0]["children"][0]["path"], "src/hello.py")
+        names = {node["name"] for node in tree}
+        self.assertTrue({"src", ".git", ".venv", "node_modules", "__pycache__"}.issubset(names))
+        self.assertNotIn(".idelite-not-a-real-file.tmp", names)
+        self.assertEqual(next(node for node in tree if node["name"] == "src")["children"][0]["path"], "src/hello.py")
+
+    def test_tree_does_not_truncate_after_five_thousand_entries(self) -> None:
+        many = self.root / "many"
+        many.mkdir()
+        for index in range(5001):
+            (many / f"folder-{index:04d}").mkdir()
+        tree = self.workspace.tree()
+        node = next(item for item in tree if item["name"] == "many")
+        self.assertEqual(len(node["children"]), 5001)
 
     def test_crud_operations(self) -> None:
         self.workspace.create("notes.txt", "file")
