@@ -9,7 +9,9 @@
     "language-status", "quick-open", "quick-input", "quick-results", "settings-modal", "search-form",
     "search-input", "search-summary", "search-results", "git-output", "git-badge", "branch-status",
     "setting-font-size", "setting-tab-size", "setting-word-wrap", "toast-region", "update-section",
-    "update-status", "update-button", "update-badge"
+    "update-status", "update-button", "update-badge", "setting-minimap", "active-line", "minimap",
+    "minimap-canvas", "minimap-viewport", "outline-list", "run-output", "diff-output", "find-widget",
+    "find-input", "find-count", "menu-popup", "info-modal", "info-title", "info-content", "sidebar-resizer"
   ].map(id => [id, document.getElementById(id)]));
 
   const state = {
@@ -19,7 +21,12 @@
     files: new Map(),
     activePath: null,
     selectedPath: null,
-    settings: { fontSize: 14, tabSize: 4, wordWrap: false },
+    settings: { fontSize: 14, tabSize: 4, wordWrap: false, minimap: true },
+    navigation: [],
+    navigationIndex: -1,
+    panelTab: "terminal",
+    notifications: [],
+    findIndex: -1,
     update: null,
     updateBusy: false,
     updateChecking: false,
@@ -122,7 +129,7 @@
       let file = state.files.get(path);
       if (!file) {
         const data = await api(`/api/file?path=${encodeURIComponent(path)}`);
-        file = { path, content: data.content, savedContent: data.content, scrollTop: 0, scrollLeft: 0 };
+        file = { path, content: data.content, savedContent: data.content, scrollTop: 0, scrollLeft: 0, selectionStart: 0, selectionEnd: 0 };
         state.files.set(path, file);
       }
       activateFile(path);
@@ -132,18 +139,27 @@
     }
   }
 
-  function activateFile(path) {
+  function activateFile(path, record = true) {
     if (state.activePath && state.files.has(state.activePath)) {
       const previous = state.files.get(state.activePath);
       previous.scrollTop = elements["code-input"].scrollTop;
       previous.scrollLeft = elements["code-input"].scrollLeft;
+      previous.selectionStart = elements["code-input"].selectionStart;
+      previous.selectionEnd = elements["code-input"].selectionEnd;
     }
     const file = state.files.get(path);
     if (!file) return;
+    if (record && state.activePath !== path) {
+      state.navigation.splice(state.navigationIndex + 1);
+      state.navigation.push(path);
+      state.navigationIndex = state.navigation.length - 1;
+    }
     state.activePath = path;
+    selectTreePath(path);
     elements["welcome"].classList.add("hidden");
     elements.editor.classList.remove("hidden");
     elements["code-input"].value = file.content;
+    elements["code-input"].setSelectionRange(file.selectionStart || 0, file.selectionEnd || 0);
     elements["code-input"].scrollTop = file.scrollTop;
     elements["code-input"].scrollLeft = file.scrollLeft;
     renderTabs();
@@ -159,6 +175,8 @@
       tab.className = `tab${path === state.activePath ? " active" : ""}`;
       tab.dataset.path = path;
       tab.title = path;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", String(path === state.activePath));
       const icon = document.createElement("span");
       const iconData = iconFor(path, "file");
       icon.className = `tree-icon ${iconData.className}`;
@@ -208,12 +226,15 @@
   async function saveActive() {
     if (!state.activePath) return;
     const file = state.files.get(state.activePath);
+    const content = file.content;
     try {
-      setStatus(`Saving ${state.activePath}…`);
-      await api("/api/file", { method: "PUT", body: { path: state.activePath, content: file.content } });
-      file.savedContent = file.content;
+      setStatus(`Saving ${file.path}…`);
+      await api("/api/file", { method: "PUT", body: { path: file.path, content } });
+      file.savedContent = content;
       renderTabs();
+      updateGit();
       setStatus("Saved", 1500);
+      return true;
     } catch (error) {
       toast(error.message, true);
       setStatus("Save failed", 2000);
@@ -224,61 +245,31 @@
     const text = elements["code-input"].value;
     if (state.activePath) state.files.get(state.activePath).content = text;
     const lineCount = Math.max(1, text.split("\n").length);
-    elements["line-numbers"].textContent = Array.from({ length: lineCount }, (_, index) => index + 1).join("\n");
+    if (elements["line-numbers"].childElementCount !== lineCount) {
+      elements["line-numbers"].innerHTML = Array.from({ length: lineCount }, (_, index) => `<span class="line-number">${index + 1}</span>`).join("");
+    }
     elements.highlight.innerHTML = highlightCode(text, languageFor(state.activePath));
+    drawMinimap();
+    renderOutline();
     syncEditorScroll();
     updateCursor();
     renderTabs();
   }
 
   function highlightCode(code, language) {
-    const definitions = {
-      python: {
-        comment: "#[^\\n]*", string: "(?:\\\"\\\"\\\"[\\s\\S]*?\\\"\\\"\\\"|'(?:\\\\.|[^'\\\\])*'|\"(?:\\\\.|[^\"\\\\])*\")",
-        keyword: "\\b(?:and|as|assert|async|await|break|case|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|match|nonlocal|not|or|pass|raise|return|try|while|with|yield)\\b",
-        literal: "\\b(?:True|False|None|self)\\b"
-      },
-      javascript: {
-        comment: "(?:\\/\\*[\\s\\S]*?\\*\\/|\\/\\/[^\\n]*)", string: "(?:`(?:\\\\.|[^`\\\\])*`|'(?:\\\\.|[^'\\\\])*'|\"(?:\\\\.|[^\"\\\\])*\")",
-        keyword: "\\b(?:async|await|break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|finally|for|from|function|if|import|in|instanceof|let|new|of|return|static|super|switch|throw|try|typeof|var|while|yield)\\b",
-        literal: "\\b(?:true|false|null|undefined|this)\\b"
-      },
-      css: {
-        comment: "\\/\\*[\\s\\S]*?\\*\\/", string: "(?:'(?:\\\\.|[^'\\\\])*'|\"(?:\\\\.|[^\"\\\\])*\")",
-        keyword: "(?:--[\\w-]+|#[a-fA-F0-9]{3,8})", literal: "\\b(?:inherit|initial|unset|auto|none|transparent|important)\\b"
-      },
-      html: {
-        comment: "<!--[\\s\\S]*?-->", string: "(?:'(?:\\\\.|[^'\\\\])*'|\"(?:\\\\.|[^\"\\\\])*\")",
-        keyword: "<\\/?[A-Za-z][^>]*>", literal: "&[A-Za-z]+;"
-      }
-    };
-    const definition = definitions[language] || definitions.javascript;
-    const number = "\\b(?:0x[\\da-fA-F]+|\\d+(?:\\.\\d+)?)\\b";
-    const regex = new RegExp(`(${definition.comment})|(${definition.string})|(${definition.keyword})|(${number})|(${definition.literal})`, "gm");
-    let result = "";
-    let position = 0;
-    for (const match of code.matchAll(regex)) {
-      result += escapeHtml(code.slice(position, match.index));
-      const type = match[1] ? "comment" : match[2] ? "string" : match[3] ? (language === "html" ? "tag" : "keyword") : match[4] ? "number" : "literal";
-      result += `<span class="tok-${type}">${escapeHtml(match[0])}</span>`;
-      position = match.index + match[0].length;
-    }
-    result += escapeHtml(code.slice(position));
-    return result + (code.endsWith("\n") ? " " : "");
+    return window.IDELiteEditor.highlight(code, language, state.settings.tabSize);
   }
 
   function escapeHtml(value) {
-    return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+    return window.IDELiteEditor.escapeHtml(value);
   }
 
   function languageFor(path) {
-    const extension = (path || "").split(".").pop().toLowerCase();
-    const languages = { py: "python", js: "javascript", mjs: "javascript", ts: "javascript", json: "javascript", html: "html", htm: "html", css: "css" };
-    return languages[extension] || "plaintext";
+    return window.IDELiteEditor.languageFor(path);
   }
 
   function languageLabel(path) {
-    const names = { python: "Python", javascript: "JavaScript", html: "HTML", css: "CSS", plaintext: "Plain Text" };
+    const names = { python: "Python", javascript: "JavaScript", html: "HTML", css: "CSS", rust: "Rust", json: "JSON", shell: "Shell", plaintext: "Plain Text" };
     return names[languageFor(path)];
   }
 
@@ -289,22 +280,62 @@
   }
 
   function syncEditorScroll() {
+    if (elements["code-input"].clientWidth) elements.highlight.style.width = `${elements["code-input"].clientWidth}px`;
     elements.highlight.scrollTop = elements["code-input"].scrollTop;
     elements.highlight.scrollLeft = elements["code-input"].scrollLeft;
     elements["line-numbers"].scrollTop = elements["code-input"].scrollTop;
+    updateCursor();
+    updateMinimapViewport();
   }
 
   function updateCursor() {
     const input = elements["code-input"];
     const before = input.value.slice(0, input.selectionStart).split("\n");
     elements["cursor-position"].textContent = `Ln ${before.length}, Col ${before.at(-1).length + 1}`;
+    elements["line-numbers"].querySelector(".current")?.classList.remove("current");
+    elements["line-numbers"].children[before.length - 1]?.classList.add("current");
+    const height = parseFloat(getComputedStyle(input).lineHeight);
+    elements["active-line"].style.top = `${5 + (before.length - 1) * height - input.scrollTop}px`;
+    elements["active-line"].classList.toggle("hidden", state.settings.wordWrap);
+  }
+
+  function drawMinimap() {
+    window.IDELiteEditor.minimap(elements["minimap-canvas"], elements["code-input"].value);
+    updateMinimapViewport();
+  }
+
+  function updateMinimapViewport() {
+    const input = elements["code-input"], map = elements.minimap;
+    const lines = input.value.split("\n").length;
+    const step = Math.min(2.1, map.clientHeight / lines);
+    const lineHeight = parseFloat(getComputedStyle(input).lineHeight);
+    elements["minimap-viewport"].style.top = `${5 + input.scrollTop / lineHeight * step}px`;
+    elements["minimap-viewport"].style.height = `${Math.min(map.clientHeight, input.clientHeight / lineHeight * step)}px`;
+    map.setAttribute("aria-valuemax", lines);
+    map.setAttribute("aria-valuenow", Math.min(lines, Math.floor(input.scrollTop / lineHeight) + 1));
+  }
+
+  function renderOutline() {
+    const symbols = window.IDELiteEditor.symbols(elements["code-input"].value, languageFor(state.activePath));
+    elements["outline-list"].replaceChildren(...symbols.map(symbol => {
+      const button = document.createElement("button");
+      button.className = "outline-item";
+      button.textContent = `${symbol.kind === "class" ? "◇" : "ƒ"}  ${symbol.name}`;
+      button.title = `Line ${symbol.line}`;
+      button.addEventListener("click", () => goToLine(symbol.line));
+      return button;
+    }));
+    if (!symbols.length) elements["outline-list"].textContent = "No symbols found.";
   }
 
   function insertAtCursor(text) {
     const input = elements["code-input"];
     const start = input.selectionStart;
-    input.setRangeText(text, start, input.selectionEnd, "end");
-    input.dispatchEvent(new Event("input"));
+    input.focus();
+    if (!document.execCommand("insertText", false, text)) {
+      input.setRangeText(text, start, input.selectionEnd, "end");
+      input.dispatchEvent(new Event("input"));
+    }
   }
 
   async function createItem(kind) {
@@ -406,34 +437,49 @@
   }
 
   async function updateGit() {
-    try {
-      const data = await api("/api/git/status");
-      elements["git-output"].textContent = data.output || (data.available ? "Working tree clean" : "This folder is not a Git repository.");
-      const lines = data.available ? data.output.split("\n") : [];
-      const branch = lines[0]?.replace(/^##\s*/, "") || "—";
-      const changes = lines.slice(1).filter(Boolean).length;
-      elements["branch-status"].textContent = `⑂ ${branch}`;
-      elements["git-badge"].textContent = changes;
-      elements["git-badge"].classList.toggle("hidden", changes === 0);
-    } catch (error) {
-      elements["git-output"].textContent = error.message;
-    }
+    return sourceControl.refresh();
   }
 
   function togglePanel(force) {
     const open = typeof force === "boolean" ? force : !elements.panel.classList.contains("open");
     elements.panel.classList.toggle("open", open);
-    if (open) elements["terminal-input"].focus();
+    if (open && state.panelTab === "terminal") elements["terminal-input"].focus();
+    drawMinimap();
+  }
+
+  function selectPanel(name) {
+    state.panelTab = name;
+    const ids = { terminal: "terminal-output", output: "run-output", diff: "diff-output" };
+    for (const [key, id] of Object.entries(ids)) elements[id].classList.toggle("hidden", key !== name);
+    elements["terminal-form"].classList.toggle("hidden", name !== "terminal");
+    document.querySelectorAll("[data-panel]").forEach(button => button.classList.toggle("active", button.dataset.panel === name));
+    togglePanel(true);
+  }
+
+  function showDiff(title, text) {
+    selectPanel("diff");
+    elements["diff-output"].replaceChildren();
+    const heading = document.createElement("span");
+    heading.className = "diff-header";
+    heading.textContent = `${title}\n\n`;
+    elements["diff-output"].append(heading);
+    for (const line of text.split("\n")) {
+      const span = document.createElement("span");
+      span.className = line.startsWith("+") ? "diff-add" : line.startsWith("-") ? "diff-remove" : line.startsWith("@@") ? "diff-header" : "";
+      span.textContent = `${line}\n`;
+      elements["diff-output"].append(span);
+    }
   }
 
   async function runActive() {
     if (!state.activePath) return toast("Open a runnable file first", true);
-    await saveActive();
-    togglePanel(true);
-    appendTerminal(`\n▶ Running ${state.activePath}\n`, "terminal-dim");
+    const path = state.activePath;
+    if (!await saveActive()) return;
+    selectPanel("output");
+    elements["run-output"].textContent = `▶ Running ${path}\n`;
     try {
-      const data = await api("/api/run", { method: "POST", body: { path: state.activePath } });
-      appendTerminal(data.output || `Process exited with code ${data.code}\n`);
+      const data = await api("/api/run", { method: "POST", body: { path } });
+      elements["run-output"].textContent += `${data.output}\nProcess exited with code ${data.code}\n`;
       setStatus(`Process exited with code ${data.code}`, 2500);
     } catch (error) {
       appendTerminal(`${error.message}\n`);
@@ -475,6 +521,8 @@
       state.workspace = data.workspace;
       state.workspaceName = data.name;
       state.files.clear();
+      state.navigation = [];
+      state.navigationIndex = -1;
       state.selectedPath = null;
       elements["terminal-prompt"].textContent = ".";
       updateWorkspaceLabels();
@@ -493,6 +541,7 @@
   }
 
   function setView(name) {
+    document.body.classList.remove("sidebar-hidden");
     document.querySelectorAll(".side-view").forEach(view => view.classList.toggle("active", view.id === `view-${name}`));
     document.querySelectorAll(".activity[data-view]").forEach(button => button.classList.toggle("active", button.dataset.view === name));
     if (name === "search") setTimeout(() => elements["search-input"].focus(), 0);
@@ -502,7 +551,9 @@
   function applySettings(settings) {
     state.settings = { ...state.settings, ...settings };
     document.documentElement.style.setProperty("--font-size", `${state.settings.fontSize}px`);
-    document.documentElement.style.setProperty("--editor-line", `${Math.round(state.settings.fontSize * 1.5)}px`);
+    document.documentElement.style.setProperty("--editor-line", `${Math.round(state.settings.fontSize * 1.43)}px`);
+    document.documentElement.style.setProperty("--tab-size", state.settings.tabSize);
+    document.body.classList.toggle("no-minimap", !state.settings.minimap);
     elements["code-input"].style.tabSize = state.settings.tabSize;
     elements.highlight.style.tabSize = state.settings.tabSize;
     document.body.classList.toggle("word-wrap", Boolean(state.settings.wordWrap));
@@ -588,6 +639,7 @@
     elements["setting-font-size"].value = state.settings.fontSize;
     elements["setting-tab-size"].value = state.settings.tabSize;
     elements["setting-word-wrap"].checked = state.settings.wordWrap;
+    elements["setting-minimap"].checked = state.settings.minimap;
     elements["settings-modal"].classList.remove("hidden");
     checkForUpdate();
   }
@@ -597,6 +649,7 @@
       fontSize: Number(elements["setting-font-size"].value),
       tabSize: Number(elements["setting-tab-size"].value),
       wordWrap: elements["setting-word-wrap"].checked,
+      minimap: elements["setting-minimap"].checked,
     };
     try {
       const data = await api("/api/settings", { method: "PUT", body: settings });
@@ -614,6 +667,8 @@
   }
 
   function toast(message, error = false) {
+    state.notifications.unshift(message);
+    state.notifications.length = Math.min(state.notifications.length, 30);
     const item = document.createElement("div");
     item.className = `toast${error ? " error" : ""}`;
     item.textContent = message;
@@ -621,7 +676,142 @@
     setTimeout(() => item.remove(), 3500);
   }
 
+  function navigateFiles(direction) {
+    const next = state.navigationIndex + direction;
+    if (next < 0 || next >= state.navigation.length) return;
+    state.navigationIndex = next;
+    const path = state.navigation[next];
+    if (state.files.has(path)) activateFile(path, false);
+    else openFile(path);
+  }
+
+  function showFind() {
+    if (!state.activePath) return;
+    elements["find-widget"].classList.remove("hidden");
+    elements["find-input"].focus();
+    elements["find-input"].select();
+  }
+
+  function findMatch(direction = 1) {
+    const input = elements["code-input"], query = elements["find-input"].value.toLowerCase();
+    if (!query) { elements["find-count"].textContent = ""; return; }
+    const text = input.value.toLowerCase(), matches = [];
+    for (let index = text.indexOf(query); index !== -1; index = text.indexOf(query, index + Math.max(1, query.length))) matches.push(index);
+    if (!matches.length) { elements["find-count"].textContent = "No results"; return; }
+    const position = direction > 0 ? input.selectionEnd : input.selectionStart - 1;
+    let index = direction > 0 ? matches.findIndex(offset => offset >= position) : matches.findLastIndex(offset => offset <= position);
+    if (index === -1) index = direction > 0 ? 0 : matches.length - 1;
+    goToLine(text.slice(0, matches[index]).split("\n").length);
+    input.setSelectionRange(matches[index], matches[index] + query.length);
+    elements["find-count"].textContent = `${index + 1} of ${matches.length}`;
+  }
+
+  function showInfo(title, content) {
+    elements["info-title"].textContent = title;
+    elements["info-content"].textContent = content;
+    elements["info-modal"].classList.remove("hidden");
+  }
+
+  async function editAction(action) {
+    if (!state.activePath) return;
+    const input = elements["code-input"];
+    input.focus();
+    if (action === "paste") {
+      try { insertAtCursor(await navigator.clipboard.readText()); }
+      catch { toast("Clipboard access unavailable. Use Ctrl+V in the editor.", true); }
+    } else if (action === "selectAll") input.select();
+    else document.execCommand(action);
+    updateCursor();
+  }
+
+  async function saveAll() {
+    for (const file of state.files.values()) {
+      if (file.content === file.savedContent) continue;
+      const content = file.content;
+      try {
+        await api("/api/file", { method: "PUT", body: { path: file.path, content } });
+        file.savedContent = content;
+      } catch (error) { toast(error.message, true); return; }
+    }
+    renderTabs();
+    updateGit();
+  }
+
+  async function toggleMinimap() {
+    applySettings({ minimap: !state.settings.minimap });
+    try { await api("/api/settings", { method: "PUT", body: { minimap: state.settings.minimap } }); }
+    catch (error) { toast(error.message, true); }
+  }
+
+  async function windowAction(action) {
+    if (action === "close" && [...state.files.values()].some(file => file.content !== file.savedContent) && !confirm("Close IDELite and discard unsaved changes?")) return;
+    const method = window.pywebview?.api?.[action];
+    if (method) await method();
+  }
+
+  const menus = {
+    File: [["New File", "new-file", ""], ["Open Folder…", "open-workspace", ""], ["Save", "save", "Ctrl+S"], ["Save All", "save-all", ""], ["Close Editor", "close-file", "Ctrl+W"]],
+    Edit: [["Undo", "undo", "Ctrl+Z"], ["Redo", "redo", "Ctrl+Y"], ["Cut", "cut", "Ctrl+X"], ["Copy", "copy", "Ctrl+C"], ["Paste", "paste", "Ctrl+V"], ["Find", "find", "Ctrl+F"]],
+    Selection: [["Select All", "select-all", "Ctrl+A"], ["Duplicate Line", "duplicate-line", ""]],
+    View: [["Explorer", "view-explorer", ""], ["Source Control", "view-source", ""], ["Toggle Sidebar", "toggle-sidebar", "Ctrl+B"], ["Toggle Minimap", "toggle-minimap", ""], ["Settings", "settings", ""]],
+    Go: [["Go to File…", "quick-open", "Ctrl+P"], ["Go to Line…", "goto-line", "Ctrl+G"], ["Back", "back", "Alt+Left"], ["Forward", "forward", "Alt+Right"]],
+    Run: [["Run Active File", "run", "F5"]],
+    Terminal: [["Open Terminal", "git-terminal", "Ctrl+`"], ["Toggle Panel", "toggle-panel", ""], ["Clear Panel", "clear-terminal", ""]],
+    Help: [["Keyboard Shortcuts", "shortcuts", ""], ["About IDELite", "about", ""]],
+  };
+
+  function showMenu(button) {
+    const popup = elements["menu-popup"], rect = button.getBoundingClientRect();
+    popup.replaceChildren(...menus[button.dataset.menu].map(([label, command, shortcut]) => {
+      const item = document.createElement("button");
+      item.setAttribute("role", "menuitem");
+      item.dataset.command = command;
+      item.textContent = label;
+      const keys = document.createElement("small");
+      keys.textContent = shortcut;
+      item.append(keys);
+      return item;
+    }));
+    popup.style.left = `${Math.min(rect.left, window.innerWidth - 260)}px`;
+    popup.style.top = `${rect.bottom + 1}px`;
+    popup.classList.remove("hidden");
+    popup.querySelector("button")?.focus();
+  }
+
+  const sourceControl = window.IDELiteSourceControl({ api, openFile, showDiff, toast, onStatus: data => {
+    elements["branch-status"].textContent = `⑂ ${data.branch || "—"}`;
+    const count = (data.files || []).length;
+    elements["git-badge"].textContent = count;
+    elements["git-badge"].classList.toggle("hidden", !count);
+  } });
+
   const commands = {
+    save: saveActive,
+    "save-all": saveAll,
+    "close-file": () => state.activePath && closeFile(state.activePath),
+    welcome: showWelcome,
+    back: () => navigateFiles(-1),
+    forward: () => navigateFiles(1),
+    "toggle-sidebar": () => document.body.classList.toggle("sidebar-hidden"),
+    "toggle-minimap": toggleMinimap,
+    "view-explorer": () => setView("explorer"),
+    "view-source": () => setView("source"),
+    "git-terminal": () => selectPanel("terminal"),
+    "window-minimize": () => windowAction("minimize"),
+    "window-maximize": () => windowAction("toggle_maximize"),
+    "window-close": () => windowAction("close"),
+    "goto-line": () => { const line = Number(prompt("Go to line", "1")); if (Number.isInteger(line) && line > 0 && state.activePath) goToLine(line); },
+    find: showFind,
+    "find-next": () => findMatch(1),
+    "find-prev": () => findMatch(-1),
+    "find-close": () => elements["find-widget"].classList.add("hidden"),
+    undo: () => editAction("undo"), redo: () => editAction("redo"), cut: () => editAction("cut"), copy: () => editAction("copy"), paste: () => editAction("paste"),
+    "select-all": () => editAction("selectAll"),
+    "duplicate-line": () => { if (!state.activePath) return; const input = elements["code-input"], start = input.value.lastIndexOf("\n", input.selectionStart - 1) + 1; let end = input.value.indexOf("\n", input.selectionStart); if (end < 0) end = input.value.length; const line = input.value.slice(start, end); input.setSelectionRange(end, end); insertAtCursor(`\n${line}`); },
+    shortcuts: () => showInfo("Keyboard Shortcuts", "Ctrl+P   Go to file\nCtrl+S   Save\nCtrl+W   Close tab\nCtrl+F   Find in file\nCtrl+G   Go to line\nCtrl+B   Toggle sidebar\nCtrl+`   Terminal\nF5       Run active file\nAlt+←/→  Navigate editors"),
+    about: () => showInfo("IDELite", "A lightweight local code editor.\nPython · Flask · SQLite · Vanilla JS\n\nSystem webview, no bundled Chromium.\nApache License 2.0\n\nGit actions operate on your local repository.\nTerminal commands run with your user rights."),
+    notifications: () => showInfo("Notifications", state.notifications.join("\n\n") || "No notifications."),
+    "close-info": () => elements["info-modal"].classList.add("hidden"),
     "new-file": () => createItem("file"),
     "new-folder": () => createItem("directory"),
     refresh: refreshTree,
@@ -629,7 +819,7 @@
     "quick-open": showQuickOpen,
     "open-workspace": openWorkspace,
     "toggle-panel": () => togglePanel(),
-    "clear-terminal": () => { elements["terminal-output"].textContent = ""; },
+    "clear-terminal": () => { elements[{ terminal: "terminal-output", output: "run-output", diff: "diff-output" }[state.panelTab]].textContent = ""; },
     run: runActive,
     settings: showSettings,
     "close-settings": () => elements["settings-modal"].classList.add("hidden"),
@@ -641,7 +831,15 @@
   document.addEventListener("click", event => {
     if (state.updateBusy) return;
     const commandElement = event.target.closest("[data-command]");
-    if (commandElement) commands[commandElement.dataset.command]?.();
+    if (commandElement) {
+      elements["menu-popup"].classList.add("hidden");
+      commands[commandElement.dataset.command]?.();
+    }
+    const menuButton = event.target.closest("[data-menu]");
+    if (menuButton) showMenu(menuButton);
+    else if (!event.target.closest("#menu-popup")) elements["menu-popup"].classList.add("hidden");
+    const panelButton = event.target.closest("[data-panel]");
+    if (panelButton) selectPanel(panelButton.dataset.panel);
     const viewElement = event.target.closest("[data-view]");
     if (viewElement) setView(viewElement.dataset.view);
   });
@@ -676,7 +874,15 @@
   });
   elements["quick-input"].addEventListener("input", event => updateQuickResults(event.target.value));
   elements["quick-input"].addEventListener("keydown", event => {
-    if (event.key === "Enter") elements["quick-results"].querySelector(".quick-item")?.click();
+    const items = [...elements["quick-results"].children];
+    let index = items.findIndex(item => item.classList.contains("active"));
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      index = Math.max(0, Math.min(items.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)));
+      items.forEach((item, position) => item.classList.toggle("active", index === position));
+      items[index]?.scrollIntoView({ block: "nearest" });
+    }
+    if (event.key === "Enter") items[index]?.click();
   });
   document.querySelectorAll(".modal-backdrop").forEach(backdrop => backdrop.addEventListener("mousedown", event => {
     if (event.target === backdrop) backdrop.classList.add("hidden");
@@ -685,6 +891,10 @@
   document.addEventListener("keydown", event => {
     if (state.updateBusy) return;
     const modifier = event.ctrlKey || event.metaKey;
+    if (modifier && !event.shiftKey && event.key.toLowerCase() === "f") { event.preventDefault(); showFind(); }
+    if (modifier && event.key.toLowerCase() === "g") { event.preventDefault(); commands["goto-line"](); }
+    if (event.altKey && event.key === "ArrowLeft") { event.preventDefault(); navigateFiles(-1); }
+    if (event.altKey && event.key === "ArrowRight") { event.preventDefault(); navigateFiles(1); }
     if (modifier && event.key.toLowerCase() === "s") { event.preventDefault(); saveActive(); }
     if (modifier && event.key.toLowerCase() === "p") { event.preventDefault(); showQuickOpen(); }
     if (modifier && event.key.toLowerCase() === "b") { event.preventDefault(); document.body.classList.toggle("sidebar-hidden"); }
@@ -693,7 +903,53 @@
     if (modifier && event.shiftKey && event.key.toLowerCase() === "f") { event.preventDefault(); setView("search"); }
     if (modifier && event.shiftKey && event.key.toLowerCase() === "e") { event.preventDefault(); setView("explorer"); }
     if (event.key === "F5") { event.preventDefault(); runActive(); }
-    if (event.key === "Escape") document.querySelectorAll(".modal-backdrop").forEach(item => item.classList.add("hidden"));
+    if (event.key === "Escape") document.querySelectorAll(".modal-backdrop, #menu-popup, #find-widget").forEach(item => item.classList.add("hidden"));
+  });
+
+  elements["find-input"].addEventListener("keydown", event => {
+    if (event.key === "Enter") { event.preventDefault(); findMatch(event.shiftKey ? -1 : 1); }
+  });
+  elements["find-input"].addEventListener("input", () => {
+    elements["code-input"].setSelectionRange(0, 0);
+    const input = elements["find-input"];
+    findMatch();
+    input.focus();
+  });
+  const mapScroll = event => {
+    if (state.updateBusy) return;
+    const input = elements["code-input"], bounds = elements.minimap.getBoundingClientRect();
+    const step = Math.min(2.1, bounds.height / input.value.split("\n").length);
+    input.scrollTop = Math.max(0, (event.clientY - bounds.top - 5) / step * parseFloat(getComputedStyle(input).lineHeight) - input.clientHeight / 2);
+    syncEditorScroll();
+  };
+  elements.minimap.addEventListener("pointerdown", event => { elements.minimap.setPointerCapture(event.pointerId); mapScroll(event); });
+  elements.minimap.addEventListener("pointermove", event => { if (elements.minimap.hasPointerCapture(event.pointerId)) mapScroll(event); });
+  elements.minimap.addEventListener("keydown", event => {
+    if (["ArrowDown", "ArrowUp", "PageDown", "PageUp"].includes(event.key)) {
+      event.preventDefault();
+      elements["code-input"].scrollTop += (event.key.endsWith("Down") ? 1 : -1) * (event.key.startsWith("Page") ? elements.editor.clientHeight : 40);
+      syncEditorScroll();
+    }
+  });
+  const resizer = elements["sidebar-resizer"];
+  const resizeSidebar = width => document.documentElement.style.setProperty("--sidebar-width", `${Math.max(180, Math.min(550, window.innerWidth / 2, width))}px`);
+  resizer.addEventListener("pointerdown", event => { resizer.setPointerCapture(event.pointerId); event.preventDefault(); });
+  resizer.addEventListener("pointermove", event => { if (resizer.hasPointerCapture(event.pointerId)) resizeSidebar(event.clientX - 48); });
+  resizer.addEventListener("keydown", event => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); resizeSidebar(document.getElementById("sidebar").clientWidth + (event.key === "ArrowLeft" ? -10 : 10)); }
+  });
+  new ResizeObserver(() => { drawMinimap(); syncEditorScroll(); }).observe(elements.editor);
+  window.addEventListener("pywebviewready", () => document.getElementById("window-controls").classList.remove("hidden"));
+  document.querySelector(".titlebar").addEventListener("dblclick", event => {
+    if (!event.target.closest("button")) windowAction("toggle_maximize");
+  });
+  elements["menu-popup"].addEventListener("keydown", event => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const items = [...elements["menu-popup"].children];
+      const index = items.indexOf(document.activeElement);
+      items[(index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.focus();
+    }
   });
 
   async function initialize() {
@@ -701,6 +957,8 @@
     try {
       const [appState] = await Promise.all([api("/api/state"), refreshTree(), updateGit()]);
       applySettings(appState.settings);
+      const initialFile = new URLSearchParams(window.location.search).get("file");
+      if (initialFile) await openFile(initialFile);
       checkForUpdate();
       setStatus("Ready");
     } catch (error) {

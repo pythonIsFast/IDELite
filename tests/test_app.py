@@ -34,6 +34,11 @@ class AppTests(unittest.TestCase):
         self.assertIn(b"window.IDELITE_BOOTSTRAP", response.data)
         self.assertIn(b"test-token", response.data)
 
+    def test_editor_assets_are_served_from_source_and_zipapp(self) -> None:
+        self.assertIn(b"IDELiteEditor", self.client.get("/static/editor.js").data)
+        self.assertIn(b"IDELiteSourceControl", self.client.get("/static/source-control.js").data)
+        self.assertEqual(self.client.get("/static/icon.svg").status_code, 404)
+
     def test_api_requires_local_token(self) -> None:
         self.assertEqual(self.client.get("/api/tree").status_code, 403)
         self.assertEqual(self.client.get("/api/tree", headers=self.headers).status_code, 200)

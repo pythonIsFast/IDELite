@@ -23,7 +23,9 @@ jobs:
         run: |
           python -m unittest discover -s tests -v
           node --check idelite/static/app.js
-          node --test tests/test_update_ui.cjs
+          node --check idelite/static/editor.js
+          node --check idelite/static/source-control.js
+          node --test tests/test_editor.cjs tests/test_update_ui.cjs
       - name: Check Python sources
         run: python -m compileall -q run.py idelite packaging/build_pyz.py
       - name: Build compact packages

@@ -28,6 +28,27 @@ def parse_args() -> argparse.Namespace:
 class WindowApi:
     def __init__(self, update_started: threading.Event) -> None:
         self.update_started = update_started
+        self._maximized = False
+
+    def minimize(self) -> None:
+        import webview
+
+        webview.windows[0].minimize()
+
+    def toggle_maximize(self) -> None:
+        import webview
+
+        window = webview.windows[0]
+        if self._maximized:
+            window.restore()
+        else:
+            window.maximize()
+        self._maximized = not self._maximized
+
+    def close(self) -> None:
+        import webview
+
+        webview.windows[0].destroy()
 
     def quit_for_update(self) -> bool:
         """Close the native window only after a verified update has been staged."""
@@ -101,6 +122,8 @@ def run_native(app: object) -> None:
             height=800,
             min_size=(820, 520),
             background_color="#181818",
+            frameless=True,
+            easy_drag=False,
             js_api=WindowApi(app.extensions["update_started"]),
         )
         icon = importlib.resources.files("idelite").joinpath("static", "icon.svg")

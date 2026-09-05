@@ -11,7 +11,7 @@ A compact VSCode-inspired desktop editor built with Python, Flask, SQLite, pyweb
 Every release provides a standalone Linux zip application and a Debian package:
 
 ```bash
-sudo apt install ./idelite_0.2.0_all.deb
+sudo apt install ./idelite_0.3.0_all.deb
 idelite /path/to/project
 ```
 
@@ -26,7 +26,8 @@ The package installs a desktop launcher and pulls in Python, GTK, and WebKitGTK 
 - Global text search with line navigation
 - Integrated workspace-scoped terminal
 - Run support for Python, JavaScript, and shell files
-- Git status view
+- Git status, staging, commit, diffs, and compact commit graph
+- Editor minimap, file outline, find, and editor navigation
 - Quick Open (`Ctrl+P`)
 - Persistent editor settings in SQLite
 - Per-launch token protection for the local Flask API
@@ -98,7 +99,7 @@ If `gi` is installed system-wide but unavailable in a virtual environment, use t
 ```bash
 python3 packaging/build_pyz.py
 packaging/build-deb.sh
-./dist/idelite-0.2.0.pyz /path/to/project
+./dist/idelite-0.3.0.pyz /path/to/project
 ```
 
 The builders vendor the Python packages but not Python or WebKitGTK. The PYZ builder fails when its output exceeds 5 MB. Tagged versions are built and published automatically through GitHub Actions.

@@ -17,6 +17,7 @@ from typing import Any
 from flask import Flask, Response, jsonify, request
 
 from .database import Database
+from .git import GitError, GitRepository
 from .updater import UpdateError, check_update, install_update
 from .workspace import Workspace, WorkspaceError
 
@@ -24,6 +25,7 @@ DEFAULT_SETTINGS = {
     "fontSize": 14,
     "tabSize": 4,
     "wordWrap": False,
+    "minimap": True,
     "theme": "dark",
 }
 
@@ -77,6 +79,7 @@ def create_app(
             return jsonify({"error": "Invalid local API token"}), 403
         return None
 
+    @app.errorhandler(GitError)
     @app.errorhandler(WorkspaceError)
     def handle_workspace_error(error: WorkspaceError) -> tuple[Response, int]:
         return jsonify({"error": str(error)}), 400
@@ -101,7 +104,7 @@ def create_app(
 
     @app.get("/static/<name>")
     def static_asset(name: str) -> Response:
-        if name not in {"app.js", "styles.css"}:
+        if name not in {"app.js", "styles.css", "editor.js", "source-control.js"}:
             return jsonify({"error": "Not found"}), 404
         mimetype = mimetypes.guess_type(name)[0] or "application/octet-stream"
         return Response(_asset(name).read_bytes(), mimetype=mimetype)
@@ -146,6 +149,13 @@ def create_app(
     def save_settings() -> Response:
         payload = _json_object()
         allowed = {key: payload[key] for key in DEFAULT_SETTINGS if key in payload}
+        if "fontSize" in allowed and (type(allowed["fontSize"]) is not int or not 10 <= allowed["fontSize"] <= 28):
+            raise WorkspaceError("Font size must be an integer between 10 and 28")
+        if "tabSize" in allowed and (type(allowed["tabSize"]) is not int or allowed["tabSize"] not in (2, 4, 8)):
+            raise WorkspaceError("Tab size must be 2, 4, or 8")
+        for key in ("minimap", "wordWrap"):
+            if key in allowed and type(allowed[key]) is not bool:
+                raise WorkspaceError(f"{key} must be a boolean")
         database.set_settings(allowed)
         return jsonify({"settings": DEFAULT_SETTINGS | database.get_settings()})
 
@@ -206,18 +216,35 @@ def create_app(
     @app.get("/api/git/status")
     def git_status() -> Response:
         try:
-            result = subprocess.run(
-                ["git", "status", "--short", "--branch"],
-                cwd=state.workspace.root,
-                capture_output=True,
-                text=True,
-                timeout=5,
-                check=False,
-            )
-            output = (result.stdout + result.stderr).strip()
-            return jsonify({"available": result.returncode == 0, "output": output})
-        except (OSError, subprocess.TimeoutExpired):
-            return jsonify({"available": False, "output": "Git is not available"})
+            repository = GitRepository(state.workspace)
+            return jsonify({**repository.status(), "history": repository.history()})
+        except GitError as error:
+            return jsonify({"available": False, "output": str(error), "files": [], "history": []})
+
+    @app.get("/api/git/diff")
+    def git_diff() -> Response:
+        repository = GitRepository(state.workspace)
+        commit = request.args.get("commit")
+        if commit:
+            text = repository.show_commit(commit)
+        else:
+            text = repository.diff(request.args.get("path", ""), request.args.get("staged") == "true")
+        return jsonify({"diff": text})
+
+    @app.post("/api/git/<action>")
+    def git_action(action: str) -> Response:
+        payload = _json_object()
+        with state.lock:
+            repository = GitRepository(state.workspace)
+            if action == "stage":
+                repository.stage(payload.get("path", "."))
+            elif action == "unstage":
+                repository.unstage(_required_string(payload, "path"))
+            elif action == "commit":
+                return jsonify({"output": repository.commit(payload.get("message", ""))})
+            else:
+                raise GitError("Unknown Git action")
+        return jsonify({"ok": True})
 
     @app.post("/api/run")
     def run_file() -> Response:
