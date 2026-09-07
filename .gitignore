@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 .codelite/
 dist/
+build/
 .coverage
 .pytest_cache/
 reference.png

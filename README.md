@@ -8,14 +8,19 @@ A compact VSCode-inspired desktop editor built with Python, Flask, SQLite, pyweb
 
 ## Download
 
-Every release provides a standalone Linux zip application and a Debian package:
+Every release provides a standalone Linux zip application, a Debian package, and
+a Windows 10/11 x64 installer. On Windows, run `IDELite-Setup-<version>.exe`;
+it installs per user, adds Start-menu shortcuts, and can be uninstalled from
+Windows Settings. On Debian or Ubuntu:
 
 ```bash
-sudo apt install ./idelite_0.3.2_all.deb
+sudo apt install ./idelite_0.4.0_all.deb
 idelite /path/to/project
 ```
 
-The package installs a desktop launcher and pulls in Python, GTK, and WebKitGTK from the distribution.
+The Debian package installs a desktop launcher and pulls in Python, GTK, and
+WebKitGTK from the distribution. Windows requires the Microsoft Edge WebView2
+Runtime, which is included with supported Windows 10 and 11 installations.
 
 ## Features
 
@@ -34,24 +39,23 @@ The package installs a desktop launcher and pulls in Python, GTK, and WebKitGTK 
 
 ## Automatic updates
 
-Installed Debian builds check the latest stable GitHub release on startup and when
-Settings opens. A green arrow on Settings indicates an available update. Choose
-**Settings → Install update** to download and verify the Debian package against
-`SHA256SUMS.txt`, then approve the restart and the system's administrator prompt.
-No package is downloaded or installed merely by checking for updates.
+Installed Debian and Windows builds check the latest stable GitHub release on
+startup and when Settings opens. A green arrow on Settings indicates an available
+update. Choose **Settings → Install update** to download and verify the platform
+installer against `SHA256SUMS.txt`. No package is downloaded or installed merely
+by checking for updates.
 
 Save or close all unsaved tabs first. Editing is locked during update preparation.
-The installer waits for IDELite to exit, uses `pkexec apt-get install`, and reopens
-the current workspace. If administrator approval is cancelled or installation
-fails, it tries to reopen the existing version. Details are recorded in
-`~/.local/share/idelite/update.log` (or `$XDG_DATA_HOME/idelite/update.log`).
-The installer never forcibly kills the editor; it aborts if the process has not
-exited within two minutes. In headless mode, stop the server manually after the
-UI reports that the package is verified, then reopen the browser after restart.
+The installer waits for IDELite to exit and reopens the current workspace.
+Debian uses `pkexec apt-get install`; Windows runs the per-user installer without
+administrator approval. The installer never forcibly kills the editor; it aborts
+if the process has not exited within two minutes. In headless mode, stop the
+server manually after the UI reports that the package is verified, then reopen
+the browser after restart.
 
-Automatic installation is only offered for `/opt/idelite/idelite.pyz` installed
-by the Debian package, not source checkouts or portable PYZ files. A working
-Polkit authentication agent is required for the administrator dialog. Checksums
+Automatic installation is offered only for the Debian package or the Windows
+installer, not source checkouts or portable PYZ files. A working Polkit
+authentication agent is required for the Debian administrator dialog. Checksums
 protect download integrity, but are not independent cryptographic signatures;
 the updater trusts this repository's GitHub releases over HTTPS.
 
@@ -112,6 +116,19 @@ packaging/build-deb.sh
 ```
 
 The builders vendor the Python packages but not Python or WebKitGTK. The PYZ builder fails when its output exceeds 5 MB. Tagged versions are built and published automatically through GitHub Actions.
+
+## Build the Windows installer
+
+On Windows 10/11 x64, install Python 3.12, Inno Setup 6, and the build
+dependencies, then run:
+
+```powershell
+python -m pip install -r requirements.txt pyinstaller pythonnet
+./packaging/windows/build.ps1
+```
+
+This creates `dist/IDELite-Setup-<version>.exe`. The GitHub Actions Windows job
+builds and tests the same installer for pull requests and releases.
 
 ## Architecture
 

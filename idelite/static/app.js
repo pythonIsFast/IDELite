@@ -627,7 +627,7 @@
         elements["update-status"].textContent = `IDELite ${update.current_version} is up to date.`;
         elements["update-button"].textContent = "Check again";
       } else if (!update.asset_available) {
-        elements["update-status"].textContent = `Version ${update.latest_version} is available, but its Debian package is missing.`;
+        elements["update-status"].textContent = `Version ${update.latest_version} is available, but its installer is missing.`;
         elements["update-button"].textContent = "Check again";
       } else {
         elements["update-status"].textContent = `Version ${update.latest_version} is available (installed: ${update.current_version}).`;
@@ -662,7 +662,7 @@
       toast("Save or close all unsaved files before updating.", true);
       return;
     }
-    if (!confirm("Install the update and restart IDELite? Administrator approval will be requested.")) return;
+    if (!confirm("Install the update and restart IDELite?")) return;
     setUpdateBusy(true);
     elements["update-status"].textContent = "Downloading and verifying the update…";
     try {

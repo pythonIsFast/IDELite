@@ -90,6 +90,23 @@ class UpdaterTests(unittest.TestCase):
             self.assertEqual(updater._installed_version(), (None, None))
             run.assert_not_called()
 
+    def test_check_update_finds_windows_installer(self) -> None:
+        release = {
+            "tag_name": "v0.3.0",
+            "assets": [
+                {"name": "IDELite-Setup-0.3.0.exe"},
+                {"name": "SHA256SUMS.txt"},
+            ],
+        }
+        with (
+            mock.patch.object(updater, "_installed_version", return_value=("windows-exe", "0.2.0")),
+            mock.patch.object(updater, "_release", return_value=release),
+        ):
+            status = updater.check_update()
+        self.assertTrue(status["available"])
+        self.assertTrue(status["asset_available"])
+        self.assertEqual(status["platform"], "windows-exe")
+
 
 class InstallTests(unittest.TestCase):
     def setUp(self) -> None:

@@ -2,7 +2,7 @@
 # Licensed under the Apache License, Version 2.0 (see LICENSE).
 # Adapted for IDELite: bounded downloads, validation, and graceful shutdown.
 
-"""Small self-updater for the installed Debian package."""
+"""Small self-updater for installed Debian and Windows packages."""
 
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from typing import Any
 RELEASE_API = "https://api.github.com/repos/pythonIsFast/IDELite/releases/latest"
 USER_AGENT = "IDELite-Updater"
 INSTALLED_APP = Path("/opt/idelite/idelite.pyz")
+WINDOWS_APP = Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "IDELite" / "IDELite.exe"
 PACKAGE_NAME = "idelite"
 _VERSION_RE = re.compile(r"^\d+(?:\.\d+){1,3}$")
 
@@ -30,21 +31,29 @@ class UpdateError(RuntimeError):
 
 
 def _installed_version() -> tuple[str | None, str | None]:
-    if not sys.platform.startswith("linux"):
-        return None, None
-    if Path(sys.argv[0]).resolve() != INSTALLED_APP:
-        return None, None
-    try:
-        result = subprocess.run(
-            ["dpkg-query", "-W", "-f=${Version}", PACKAGE_NAME],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=True,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None, None
-    return "linux-deb", result.stdout.strip()
+    if sys.platform.startswith("linux"):
+        if Path(sys.argv[0]).resolve() != INSTALLED_APP:
+            return None, None
+        try:
+            result = subprocess.run(
+                ["dpkg-query", "-W", "-f=${Version}", PACKAGE_NAME],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=True,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None, None
+        return "linux-deb", result.stdout.strip()
+    if sys.platform == "win32" and getattr(sys, "frozen", False):
+        executable = Path(sys.executable).resolve()
+        if executable != WINDOWS_APP.resolve():
+            return None, None
+        try:
+            return "windows-exe", (executable.parent / "version.txt").read_text(encoding="utf-8").strip()
+        except OSError:
+            return None, None
+    return None, None
 
 
 def _version_tuple(value: str) -> tuple[int, ...]:
@@ -76,6 +85,14 @@ def _release() -> dict[str, Any]:
     return payload
 
 
+def _installer_name(platform: str, version: str) -> str:
+    if platform == "linux-deb":
+        return f"idelite_{version}_all.deb"
+    if platform == "windows-exe":
+        return f"IDELite-Setup-{version}.exe"
+    raise UpdateError(f"Unsupported update platform: {platform}")
+
+
 def check_update() -> dict[str, Any]:
     platform, current = _installed_version()
     if not platform or not current:
@@ -83,7 +100,7 @@ def check_update() -> dict[str, Any]:
 
     release = _release()
     latest = str(release.get("tag_name") or "").lstrip("v")
-    expected = f"idelite_{latest}_all.deb"
+    expected = _installer_name(platform, latest)
     assets = release.get("assets") or []
     names = {str(asset.get("name")) for asset in assets if isinstance(asset, dict)}
     return {
@@ -176,12 +193,41 @@ finally:
         raise UpdateError(f"Could not start the installer: {error}") from error
 
 
+def _install_windows_after_exit(
+    installer: Path, directory: Path, parent_pid: int, restart: list[str]
+) -> None:
+    script = directory / "install-update.ps1"
+    script.write_text(
+        """param([int]$ParentPid, [string]$Installer, [string]$RestartJson, [string]$Directory)
+$log = Join-Path $env:LOCALAPPDATA 'IDELite\\update.log'
+New-Item -ItemType Directory -Force -Path (Split-Path $log) | Out-Null
+while (Get-Process -Id $ParentPid -ErrorAction SilentlyContinue) { Start-Sleep -Milliseconds 200 }
+try {
+  Start-Process -FilePath $Installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+  $restart = ConvertFrom-Json $RestartJson
+  Start-Process -FilePath $restart[0] -ArgumentList @($restart[1..($restart.Count - 1)])
+} catch { $_ | Out-File -Append $log }
+Remove-Item -Recurse -Force $Directory -ErrorAction SilentlyContinue
+""",
+        encoding="utf-8",
+    )
+    try:
+        subprocess.Popen(
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script),
+             str(parent_pid), str(installer), json.dumps(restart), str(directory)],
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+            | getattr(subprocess, "DETACHED_PROCESS", 0),
+        )
+    except OSError as error:
+        raise UpdateError(f"Could not start the installer: {error}") from error
+
+
 def install_update(restart: list[str]) -> dict[str, str]:
     platform, current = _installed_version()
-    if platform != "linux-deb" or not current:
-        raise UpdateError("Updates are only available for the installed Debian package")
+    if platform not in {"linux-deb", "windows-exe"} or not current:
+        raise UpdateError("Updates are only available for installed IDELite packages")
 
-    if not all(os.access(tool, os.X_OK) for tool in ("/usr/bin/pkexec", "/usr/bin/apt-get")):
+    if platform == "linux-deb" and not all(os.access(tool, os.X_OK) for tool in ("/usr/bin/pkexec", "/usr/bin/apt-get")):
         raise UpdateError("Install pkexec and apt before using automatic updates")
 
     release = _release()
@@ -189,7 +235,7 @@ def install_update(restart: list[str]) -> dict[str, str]:
     if _version_tuple(latest) <= _version_tuple(current):
         raise UpdateError("IDELite is already up to date")
 
-    expected = f"idelite_{latest}_all.deb"
+    expected = _installer_name(platform, latest)
     assets = {
         str(asset.get("name")): str(asset.get("browser_download_url") or "")
         for asset in release.get("assets") or []
@@ -207,7 +253,7 @@ def install_update(restart: list[str]) -> dict[str, str]:
     installer = directory / expected
     checksums = directory / "SHA256SUMS.txt"
     try:
-        _download(assets[expected], installer, 5 * 1024 * 1024)
+        _download(assets[expected], installer, 100 * 1024 * 1024 if platform == "windows-exe" else 5 * 1024 * 1024)
         _download(assets["SHA256SUMS.txt"], checksums, 64 * 1024)
 
         expected_hash = None
@@ -219,7 +265,10 @@ def install_update(restart: list[str]) -> dict[str, str]:
         if not expected_hash or _sha256(installer) != expected_hash:
             raise UpdateError("The downloaded installer's SHA-256 checksum did not match")
 
-        _install_after_exit(installer, directory, os.getpid(), restart)
+        if platform == "windows-exe":
+            _install_windows_after_exit(installer, directory, os.getpid(), restart)
+        else:
+            _install_after_exit(installer, directory, os.getpid(), restart)
     except Exception as error:
         shutil.rmtree(directory, ignore_errors=True)
         if isinstance(error, UpdateError):

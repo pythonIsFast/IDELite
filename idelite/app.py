@@ -173,7 +173,7 @@ def create_app(
         try:
             if app.extensions["update_started"].is_set():
                 raise UpdateError("An update is already pending; close IDELite to continue")
-            restart = ["/usr/bin/idelite", str(state.workspace.root)]
+            restart = [sys.executable if sys.platform == "win32" else "/usr/bin/idelite", str(state.workspace.root)]
             restart.extend(app.config.get("UPDATE_RESTART_FLAGS", []))
             result = install_update(restart)
             app.extensions["update_started"].set()

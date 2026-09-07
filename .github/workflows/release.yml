@@ -9,7 +9,36 @@ permissions:
   contents: write
 
 jobs:
+  windows-package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Verify tag version
+        shell: pwsh
+        run: if ($env:GITHUB_REF_NAME.Substring(1) -ne (Get-Content VERSION -Raw).Trim()) { exit 1 }
+      - name: Install build dependencies
+        run: |
+          python -m pip install -r requirements.txt pyinstaller pythonnet
+          choco install innosetup --no-progress -y
+      - name: Test and build Windows installer
+        shell: pwsh
+        run: |
+          python -m unittest discover -s tests -v
+          node --check idelite/static/app.js
+          ./packaging/windows/build.ps1
+          if (!(Test-Path dist/IDELite-Setup-*.exe)) { throw "Windows installer was not created" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist/IDELite-Setup-*.exe
+          if-no-files-found: error
+
   release:
+    needs: windows-package
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,9 +65,13 @@ jobs:
           test "$(stat -c %s dist/idelite_*_all.deb)" -lt 5242880
           dist/idelite-*.pyz --help
           python -I tests/smoke_package.py dist/idelite-*.pyz
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: dist
       - name: Create checksums
         working-directory: dist
-        run: sha256sum idelite-*.pyz idelite_*_all.deb > SHA256SUMS.txt
+        run: sha256sum idelite-*.pyz idelite_*_all.deb IDELite-Setup-*.exe > SHA256SUMS.txt
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -46,6 +79,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             dist/idelite-*.pyz \
             dist/idelite_*_all.deb \
+            dist/IDELite-Setup-*.exe \
             dist/SHA256SUMS.txt \
             --title "IDELite ${GITHUB_REF_NAME#v}" \
             --generate-notes
