@@ -161,6 +161,7 @@ body.sidebar-hidden .sidebar, body.sidebar-hidden .sidebar-resizer { display: no
 .line-numbers { padding: 5px 17px 80px 0; overflow: hidden; color: #565656; font: var(--font-size)/var(--editor-line) var(--code-font); text-align: right; white-space: pre; }
 .line-number { display: block; position: relative; }
 .line-number.current { color: #b8b8b8; }
+.line-number.problem { color: #e08b8b; background: #8f383833; border-left: 2px solid #d66; }
 .code-layer { position: relative; min-width: 0; height: 100%; overflow: hidden; }
 #highlight, #code-input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; border: 0; border-radius: 0; padding: 5px 20px 80px 0; overflow: auto; outline: 0; tab-size: 4; font: var(--font-size)/var(--editor-line) var(--code-font); white-space: pre; word-break: normal; font-variant-ligatures: none; letter-spacing: 0; }
 #highlight { pointer-events: none; color: #c5c5c5; background: transparent; scrollbar-width: none; }

@@ -10,7 +10,7 @@
     "search-input", "search-summary", "search-results", "git-output", "git-badge", "branch-status",
     "setting-font-size", "setting-tab-size", "setting-word-wrap", "toast-region", "update-section",
     "update-status", "update-button", "update-badge", "setting-minimap", "active-line", "minimap",
-    "minimap-canvas", "minimap-viewport", "outline-list", "run-output", "diff-output", "find-widget",
+    "minimap-canvas", "minimap-viewport", "outline-list", "run-output", "problems-output", "diff-output", "find-widget",
     "find-input", "find-count", "menu-popup", "info-modal", "info-title", "info-content", "sidebar-resizer"
   ].map(id => [id, document.getElementById(id)]));
 
@@ -31,6 +31,7 @@
     update: null,
     updateBusy: false,
     updateChecking: false,
+    diagnostics: [],
     terminalHistory: [],
     terminalHistoryIndex: 0,
   };
@@ -294,6 +295,7 @@
     if (elements["line-numbers"].childElementCount !== lineCount) {
       elements["line-numbers"].innerHTML = Array.from({ length: lineCount }, (_, index) => `<span class="line-number">${index + 1}</span>`).join("");
     }
+    for (const problem of state.diagnostics) elements["line-numbers"].children[problem.line - 1]?.classList.add("problem");
     elements.highlight.innerHTML = highlightCode(text, languageFor(state.activePath));
     drawMinimap();
     renderOutline();
@@ -315,7 +317,7 @@
   }
 
   function languageLabel(path) {
-    const names = { python: "Python", javascript: "JavaScript", html: "HTML", css: "CSS", rust: "Rust", json: "JSON", shell: "Shell", plaintext: "Plain Text" };
+    const names = { python: "Python", javascript: "JavaScript", html: "HTML/XML", css: "CSS", rust: "Rust", cpp: "C/C++", csharp: "C#", java: "Java", kotlin: "Kotlin", go: "Go", php: "PHP", ruby: "Ruby", sql: "SQL", yaml: "YAML/TOML", markdown: "Markdown", shell: "Shell", powershell: "PowerShell", json: "JSON", plaintext: "Plain Text" };
     return names[languageFor(path)];
   }
 
@@ -495,7 +497,7 @@
 
   function selectPanel(name) {
     state.panelTab = name;
-    const ids = { terminal: "terminal-output", output: "run-output", diff: "diff-output" };
+    const ids = { terminal: "terminal-output", output: "run-output", problems: "problems-output", diff: "diff-output" };
     for (const [key, id] of Object.entries(ids)) elements[id].classList.toggle("hidden", key !== name);
     elements["terminal-form"].classList.toggle("hidden", name !== "terminal");
     document.querySelectorAll("[data-panel]").forEach(button => button.classList.toggle("active", button.dataset.panel === name));
@@ -515,6 +517,21 @@
       span.textContent = `${line}\n`;
       elements["diff-output"].append(span);
     }
+  }
+
+  async function checkActive() {
+    if (!state.activePath || !await saveActive()) return;
+    try {
+      const data = await api("/api/diagnostics", { method: "POST", body: { path: state.activePath } });
+      state.diagnostics = data.diagnostics || [];
+      elements["problems-output"].textContent = state.diagnostics.length
+        ? state.diagnostics.map(problem => `${state.activePath}:${problem.line}:${problem.column}  ${problem.message}`).join("\n")
+        : data.message;
+      document.querySelectorAll(".line-number.problem").forEach(line => line.classList.remove("problem"));
+      for (const problem of state.diagnostics) elements["line-numbers"].children[problem.line - 1]?.classList.add("problem");
+      selectPanel("problems");
+      setStatus(data.message, 2500);
+    } catch (error) { toast(error.message, true); }
   }
 
   async function runActive() {
@@ -804,7 +821,7 @@
     Selection: [["Select All", "select-all", "Ctrl+A"], ["Duplicate Line", "duplicate-line", ""]],
     View: [["Explorer", "view-explorer", ""], ["Source Control", "view-source", ""], ["Toggle Sidebar", "toggle-sidebar", "Ctrl+B"], ["Toggle Minimap", "toggle-minimap", ""], ["Settings", "settings", ""]],
     Go: [["Go to File…", "quick-open", "Ctrl+P"], ["Go to Line…", "goto-line", "Ctrl+G"], ["Back", "back", "Alt+Left"], ["Forward", "forward", "Alt+Right"]],
-    Run: [["Run Active File", "run", "F5"]],
+    Run: [["Run Active File", "run", "F5"], ["Check active file", "check", "F8"]],
     Terminal: [["Open Terminal", "git-terminal", "Ctrl+`"], ["Toggle Panel", "toggle-panel", ""], ["Clear Panel", "clear-terminal", ""]],
     Help: [["Keyboard Shortcuts", "shortcuts", ""], ["About IDELite", "about", ""]],
   };
@@ -868,8 +885,9 @@
     "quick-open": showQuickOpen,
     "open-workspace": openWorkspace,
     "toggle-panel": () => togglePanel(),
-    "clear-terminal": () => { elements[{ terminal: "terminal-output", output: "run-output", diff: "diff-output" }[state.panelTab]].textContent = ""; },
+    "clear-terminal": () => { elements[{ terminal: "terminal-output", output: "run-output", problems: "problems-output", diff: "diff-output" }[state.panelTab]].textContent = ""; },
     run: runActive,
+    check: checkActive,
     settings: showSettings,
     "close-settings": () => elements["settings-modal"].classList.add("hidden"),
     "save-settings": saveSettings,
@@ -952,6 +970,7 @@
     if (modifier && event.shiftKey && event.key.toLowerCase() === "f") { event.preventDefault(); setView("search"); }
     if (modifier && event.shiftKey && event.key.toLowerCase() === "e") { event.preventDefault(); setView("explorer"); }
     if (event.key === "F5") { event.preventDefault(); runActive(); }
+    if (event.key === "F8") { event.preventDefault(); checkActive(); }
     if (event.key === "Escape") document.querySelectorAll(".modal-backdrop, #menu-popup, #find-widget").forEach(item => item.classList.add("hidden"));
   });
 

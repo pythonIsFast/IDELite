@@ -66,6 +66,14 @@ class AppTests(unittest.TestCase):
         response = self.client.get("/api/search?q=changed", headers=self.headers)
         self.assertEqual(response.get_json()["results"][0]["path"], "main.py")
 
+    def test_diagnostics_reports_python_syntax_errors(self) -> None:
+        (self.root / "broken.py").write_text("def broken(\n", encoding="utf-8")
+        response = self.client.post("/api/diagnostics", headers=self.headers, json={"path": "broken.py"})
+        self.assertEqual(response.status_code, 200)
+        diagnostic = response.get_json()["diagnostics"][0]
+        self.assertGreaterEqual(diagnostic["line"], 1)
+        self.assertIn("SyntaxError", diagnostic["message"])
+
     def test_source_run_does_not_offer_self_update(self) -> None:
         response = self.client.get("/api/update", headers=self.headers)
         self.assertEqual(response.status_code, 200)

@@ -138,9 +138,9 @@
         <div id="find-widget" class="find-widget hidden"><input id="find-input" aria-label="Find in file" placeholder="Find in file"><span id="find-count"></span><button data-command="find-prev" title="Previous match">↑</button><button data-command="find-next" title="Next match">↓</button><button data-command="find-close" title="Close find">×</button></div>
       </section>
       <section id="panel" class="panel">
-        <div class="panel-header"><div class="panel-tabs"><button class="active" data-panel="terminal">TERMINAL</button><button data-panel="output">OUTPUT</button><button data-panel="diff">DIFF</button></div><div><button class="icon-button" data-command="clear-terminal" title="Clear panel">⌫</button><button class="icon-button" data-command="toggle-panel" title="Close panel"><svg><use href="#i-close"/></svg></button></div></div>
+        <div class="panel-header"><div class="panel-tabs"><button class="active" data-panel="terminal">TERMINAL</button><button data-panel="output">OUTPUT</button><button data-panel="problems">PROBLEMS</button><button data-panel="diff">DIFF</button></div><div><button class="icon-button" data-command="clear-terminal" title="Clear panel">⌫</button><button class="icon-button" data-command="toggle-panel" title="Close panel"><svg><use href="#i-close"/></svg></button></div></div>
         <pre id="terminal-output" class="terminal-output"><span class="terminal-dim">IDELite · commands run with your user permissions</span></pre>
-        <pre id="run-output" class="terminal-output hidden"></pre><pre id="diff-output" class="terminal-output hidden"></pre>
+        <pre id="run-output" class="terminal-output hidden"></pre><pre id="problems-output" class="terminal-output hidden"></pre><pre id="diff-output" class="terminal-output hidden"></pre>
         <form id="terminal-form" class="terminal-form"><span id="terminal-prompt">.</span><span class="prompt-sign">$</span><input id="terminal-input" autocomplete="off" spellcheck="false" aria-label="Terminal command"></form>
       </section>
     </main>

@@ -14,7 +14,7 @@ it installs per user, adds Start-menu shortcuts, and can be uninstalled from
 Windows Settings. On Debian or Ubuntu:
 
 ```bash
-sudo apt install ./idelite_0.4.0_all.deb
+sudo apt install ./idelite_0.5.0_all.deb
 idelite /path/to/project
 ```
 
@@ -26,7 +26,7 @@ Runtime, which is included with supported Windows 10 and 11 installations.
 
 - Native desktop window with a VSCode-style workbench
 - Workspace explorer with file and folder creation
-- Multi-tab text editor with lightweight syntax highlighting
+- Multi-tab text editor with syntax highlighting and compiler-based Problems checks
 - Atomic file saves and workspace path containment
 - Global text search with line navigation
 - Integrated workspace-scoped terminal
@@ -106,6 +106,7 @@ If `gi` is installed system-wide but unavailable in a virtual environment, use t
 | `Ctrl+Shift+F` | Search workspace |
 | `Ctrl+Shift+E` | Show Explorer |
 | `F5` | Run active file |
+| `F8` | Check active file for syntax errors |
 
 ## Build the compact Linux package
 

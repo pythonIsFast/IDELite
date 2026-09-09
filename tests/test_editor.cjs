@@ -32,6 +32,9 @@ test('outline has real source line numbers', () => {
   assert.equal(symbols[1].line, 3);
   assert.equal(editor.languageFor('main.rs'), 'rust');
   assert.equal(editor.languageFor('data.json'), 'json');
+  assert.equal(editor.languageFor('main.cpp'), 'cpp');
+  assert.equal(editor.languageFor('program.cs'), 'csharp');
+  assert.equal(editor.languageFor('build.ps1'), 'powershell');
 });
 
 test('minimap draws text without requiring an image dependency', () => {

@@ -17,6 +17,7 @@ from typing import Any
 from flask import Flask, Response, jsonify, request
 
 from .database import Database
+from .diagnostics import diagnose
 from .git import GitError, GitRepository
 from .updater import UpdateError, check_update, install_update
 from .workspace import Workspace, WorkspaceError
@@ -302,6 +303,14 @@ def create_app(
         if not command:
             raise WorkspaceError("This file type cannot be run directly")
         return jsonify(_execute(command, state.workspace.root, shell=False))
+
+    @app.post("/api/diagnostics")
+    def diagnostics() -> Response:
+        relative_path = _required_string(_json_object(), "path")
+        path = state.workspace.resolve(relative_path, must_exist=True)
+        if not path.is_file():
+            raise WorkspaceError("A file is required")
+        return jsonify(diagnose(path, state.workspace.root))
 
     @app.post("/api/terminal")
     def terminal() -> Response:
