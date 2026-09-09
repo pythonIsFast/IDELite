@@ -9,7 +9,7 @@
     "language-status", "quick-open", "quick-input", "quick-results", "settings-modal", "search-form",
     "search-input", "search-summary", "search-results", "git-output", "git-badge", "branch-status",
     "setting-font-size", "setting-tab-size", "setting-word-wrap", "toast-region", "update-section",
-    "update-status", "update-button", "update-badge", "setting-minimap", "active-line", "minimap",
+    "update-status", "update-button", "update-badge", "setting-minimap", "setting-syntax-check", "active-line", "minimap",
     "minimap-canvas", "minimap-viewport", "outline-list", "run-output", "problems-output", "diff-output", "find-widget",
     "find-input", "find-count", "menu-popup", "info-modal", "info-title", "info-content", "sidebar-resizer"
   ].map(id => [id, document.getElementById(id)]));
@@ -120,6 +120,7 @@
   }
 
   let sessionTimer = null;
+  let syntaxCheckTimer = null;
 
   function sessionPayload() {
     return {
@@ -519,8 +520,8 @@
     }
   }
 
-  async function checkActive() {
-    if (!state.activePath || !await saveActive()) return;
+  async function checkActive(save = true) {
+    if (!state.activePath || (save && !await saveActive())) return;
     try {
       const data = await api("/api/diagnostics", { method: "POST", body: { path: state.activePath } });
       state.diagnostics = data.diagnostics || [];
@@ -614,6 +615,12 @@
     if (name === "source") updateGit();
   }
 
+  function scheduleSyntaxChecks() {
+    clearInterval(syntaxCheckTimer);
+    const seconds = state.settings.syntaxCheckInterval;
+    if (seconds) syntaxCheckTimer = setInterval(() => checkActive(false), seconds * 1000);
+  }
+
   function applySettings(settings) {
     state.settings = { ...state.settings, ...settings };
     document.documentElement.style.setProperty("--font-size", `${state.settings.fontSize}px`);
@@ -624,6 +631,7 @@
     elements.highlight.style.tabSize = state.settings.tabSize;
     document.body.classList.toggle("word-wrap", Boolean(state.settings.wordWrap));
     elements["indent-status"].textContent = `Spaces: ${state.settings.tabSize}`;
+    scheduleSyntaxChecks();
     if (state.activePath) updateEditor();
   }
 
@@ -706,6 +714,7 @@
     elements["setting-tab-size"].value = state.settings.tabSize;
     elements["setting-word-wrap"].checked = state.settings.wordWrap;
     elements["setting-minimap"].checked = state.settings.minimap;
+    elements["setting-syntax-check"].value = state.settings.syntaxCheckInterval;
     elements["settings-modal"].classList.remove("hidden");
     checkForUpdate();
   }
@@ -716,6 +725,7 @@
       tabSize: Number(elements["setting-tab-size"].value),
       wordWrap: elements["setting-word-wrap"].checked,
       minimap: elements["setting-minimap"].checked,
+      syntaxCheckInterval: Number(elements["setting-syntax-check"].value),
     };
     try {
       const data = await api("/api/settings", { method: "PUT", body: settings });

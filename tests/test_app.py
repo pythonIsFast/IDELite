@@ -66,6 +66,13 @@ class AppTests(unittest.TestCase):
         response = self.client.get("/api/search?q=changed", headers=self.headers)
         self.assertEqual(response.get_json()["results"][0]["path"], "main.py")
 
+    def test_syntax_check_interval_is_persisted(self) -> None:
+        response = self.client.put("/api/settings", headers=self.headers, json={"syntaxCheckInterval": 15})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()["settings"]["syntaxCheckInterval"], 15)
+        response = self.client.put("/api/settings", headers=self.headers, json={"syntaxCheckInterval": 10})
+        self.assertEqual(response.status_code, 400)
+
     def test_diagnostics_reports_python_syntax_errors(self) -> None:
         (self.root / "broken.py").write_text("def broken(\n", encoding="utf-8")
         response = self.client.post("/api/diagnostics", headers=self.headers, json={"path": "broken.py"})

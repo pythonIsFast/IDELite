@@ -27,6 +27,7 @@ DEFAULT_SETTINGS = {
     "tabSize": 4,
     "wordWrap": False,
     "minimap": True,
+    "syntaxCheckInterval": 0,
     "theme": "dark",
 }
 
@@ -192,6 +193,8 @@ def create_app(
             raise WorkspaceError("Font size must be an integer between 10 and 28")
         if "tabSize" in allowed and (type(allowed["tabSize"]) is not int or allowed["tabSize"] not in (2, 4, 8)):
             raise WorkspaceError("Tab size must be 2, 4, or 8")
+        if "syntaxCheckInterval" in allowed and (type(allowed["syntaxCheckInterval"]) is not int or allowed["syntaxCheckInterval"] not in (0, 5, 15, 30, 60)):
+            raise WorkspaceError("Syntax check interval must be 0, 5, 15, 30, or 60 seconds")
         for key in ("minimap", "wordWrap"):
             if key in allowed and type(allowed[key]) is not bool:
                 raise WorkspaceError(f"{key} must be a boolean")

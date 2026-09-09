@@ -14,7 +14,7 @@ it installs per user, adds Start-menu shortcuts, and can be uninstalled from
 Windows Settings. On Debian or Ubuntu:
 
 ```bash
-sudo apt install ./idelite_0.5.0_all.deb
+sudo apt install ./idelite_0.5.1_all.deb
 idelite /path/to/project
 ```
 
