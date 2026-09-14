@@ -128,7 +128,8 @@ def run_native(app: object) -> None:
             easy_drag=False,
             js_api=WindowApi(app.extensions["update_started"]),
         )
-        icon = importlib.resources.files("idelite").joinpath("static", "icon.svg")
+        icon_name = "icon.ico" if sys.platform.startswith("win") else "icon.svg"
+        icon = importlib.resources.files("idelite").joinpath("static", icon_name)
         with webview_assets(), importlib.resources.as_file(icon) as icon_path:
             webview.start(debug=False, icon=str(icon_path))
     except ImportError:
